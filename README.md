@@ -11,6 +11,7 @@ A local-first, interactive conversational companion application featuring a real
 ## Table of Contents
 
 - [Overview](#overview)
+- [What's New in v1.2.23](#whats-new-in-v1223)
 - [Key Features](#key-features)
 - [Architecture](#architecture)
 - [Quick Start](#quick-start)
@@ -34,6 +35,24 @@ Ryza AI Revive is an offline reconstruction client designed to run entirely loca
 Intelligence and speech are attached dynamically at runtime via standard HTTP APIs configured directly by the user:
 - Connects to any **OpenAI-compatible LLM endpoint** (e.g., OpenRouter, OpenAI, DeepSeek, Qwen/DashScope, or local models via Ollama and LM Studio).
 - Supports modern **Text-to-Speech (TTS)** engines (Fish Audio, Alibaba Qwen/CosyVoice, OpenAI TTS, or local VOICEVOX/AivisSpeech).
+
+---
+
+## What's New in v1.2.23
+
+This release integrates all upstream updates from **v1.2.23 (Code 26)** while fully preserving our custom community enhancements:
+
+1. **Cross-legged Sitting Posture (盤 / `btn-sit-variant`)**: Outfits supporting dual sitting poses (`sitting_normal` / `sitting_agura`) now feature a dedicated 「盤」 HUD button to switch between regular seated and cross-legged poses with fully synchronized leg and arm animations.
+2. **Deterministic Rest & Sleep (`stamina.sleep`)**: Adventure Status sheet now features a "Go Home and Sleep" button that recovers full stamina and advances the clock without waiting for LLM `<state>` triggers (gated to evening/night when stamina is not full).
+3. **Local LLM Zero-Key Support (`Config.llmReady`)**: Loopback endpoints (`127.0.0.1` / `localhost` for Ollama, LM Studio, vLLM) no longer require a dummy API key.
+4. **Automatic Gather Quest Progress**: Gathering items into your inventory (`inventory_added`) advances gather quests automatically without requiring redundant quest blocks from the LLM.
+5. **Memory Protection & Recovery**: Rotary `.bak` backups on write, unreadable files quarantined as `.corrupt` instead of discarded, and full memory log display without the previous 40-item truncation.
+6. **Long-term Memory in Save Slots**: Save slots 1–3 now serialize long-term memories and digests alongside game state and conversation history.
+7. **Storage Pressure Canary**: Proactive storage health monitoring warns via toast (`toast.storageFull`) when `localStorage` quota is nearing capacity.
+8. **Automatic Device Language Detection**: Fresh launches detect system language via `navigator.languages` (zh, zh-tw, ja, id, en) automatically.
+9. **Desktop Navigation & Sheet Closers**: Full keyboard `Esc` dismiss and dedicated close (`×`) handles on all bottom sheets for desktop and browser users.
+10. **Custom Persona Override (`chara.override`)**: Direct configuration field in Character Settings to inject custom persona instructions and system prompt extensions.
+11. **Skin Verification Tool (`scripts/verify_skins.py`)**: Official script to validate custom ZIP skin archives against Spine 4.2 runtime specifications.
 
 ---
 
