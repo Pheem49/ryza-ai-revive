@@ -100,8 +100,11 @@
       r.querySelectorAll('[data-i18n-placeholder]').forEach(function (el) {
         el.placeholder = I18n.t(el.getAttribute('data-i18n-placeholder'));
       });
+      /* data-i18n-title sets the tooltip (title attr) rather than the text —
+         used where a button already shows an icon or short label but wants a
+         longer hover hint. */
       r.querySelectorAll('[data-i18n-title]').forEach(function (el) {
-        el.title = I18n.t(el.getAttribute('data-i18n-title'));
+        el.setAttribute('title', I18n.t(el.getAttribute('data-i18n-title')));
       });
     },
 
@@ -149,6 +152,11 @@
       Daily.load();
       Quests.ensure();
       try { if (window.Memory) Memory.load(); } catch (e) {}
+      /* A corrupt or recovered memory blob used to be invisible: it silently
+         became "no memories" and the next write buried the old payload.
+         Remember the outcome and say it once the toast host is up (#14). */
+      try { App._memNotice = window.Memory ? Memory.lastLoad() : 'empty'; }
+      catch (e) { App._memNotice = 'empty'; }
 
       App._bindChrome();
       App._bindTalk();
@@ -175,6 +183,8 @@
         });
         App.updateHud();
         App.renderWorld();
+        if (App._memNotice === 'recovered') App.toast(I18n.t('memory.recovered'));
+        else if (App._memNotice === 'corrupt') App.toast(I18n.t('memory.corrupt'), true);
         /* The Android shell can schedule alarms in the system: they survive the
            process being killed and can wake the lock screen, which an in-page
            timer cannot. When that bridge is present the native side becomes the
@@ -350,7 +360,6 @@
          world / alarm never reference App, Sound or Fx themselves. */
       if (World.setNotice) World.setNotice(App.toast);
       if (Quests.setNotice) Quests.setNotice(App.toast);
-      if (Quests.setNavigator) Quests.setNavigator(function (view) { App.showView(view); });
       if (Alarm.setEditor) Alarm.setEditor(function (id) { App._editAlarm(id); });
       var celebrate = function () {
         if (window.Sound) Sound.se('quest_clear');
@@ -613,6 +622,12 @@
            see Avatar.postureSwitchable. */
         if (window.Avatar && Avatar.shouldResetPosture && Avatar.shouldResetPosture()) {
           Config.set('state.posture', 'posture_standing');
+          /* The sitting VARIANT (cross-legged) is part of the same per-stage
+             choice: back to the outfit's own default, so a stage change cannot
+             leave her cross-legged on a sofa authored for the normal sit.
+             setSittingVariant owns the persisted value (single writer). */
+          if (Avatar.setSittingVariant) Avatar.setSittingVariant('sitting_normal');
+          else Config.set('state.sittingVariant', '');
         }
         App.updateHud();   /* posture chip visibility follows the worn outfit */
       });
@@ -758,6 +773,17 @@
         App.setPosture(Avatar.postureKey() === 'posture_standing'
           ? 'posture_sitting' : 'posture_standing');
       };
+      /* Seated variant (cross-legged / normal). Same action-semantics rule as
+         the sit/stand chip: the label names what the tap will do. Only shown
+         while the sitting skeleton is on screen AND the outfit's SittingSets
+         really ships a second variant — see Avatar.sittingSwitchable. */
+      var sitVarBtn = document.getElementById('btn-sit-variant');
+      if (sitVarBtn) sitVarBtn.onclick = function () {
+        var next = Avatar.currentSittingVariant() === 'sitting_agura'
+          ? 'sitting_normal' : 'sitting_agura';
+        Avatar.setSittingVariant(next);
+        App.updateHud();
+      };
       var skinBtn = document.getElementById('btn-chara-skin');
       if (skinBtn) skinBtn.onclick = function () { App.showView('skin'); };
       /* place / tod / mode / map now live inside the mode sheet (the » row
@@ -827,7 +853,7 @@
         World.jumpArea(e.target.value, Config.section('state').stage, App.gotoStage);
       };
       document.getElementById('btn-quest-new').onclick = function () {
-        var hasKey = !!(Config.section('llm').apiKey);
+        var hasKey = Config.llmReady();
         if (hasKey) App.toast(I18n.t('toast.questGen'));
         Quests.generate(hasKey).then(function (q) {
           App.toast(I18n.t('quest.newOk') + '「' + q.title + '」');
@@ -869,13 +895,25 @@
       /* 服装导入：ZIP 走 CrfStore（IndexedDB），失败只报错不崩 */
       var crfBtn = document.getElementById('btn-crf-zip');
       var crfFile = document.getElementById('crf-file-zip');
+      /* Map a CrfStore error to a translated line: prefer crf.err.<code>, and
+         fall back to the error's own English message when a code is missing
+         or has no translation yet. */
+      function crfErrText(e) {
+        var code = e && e.code;
+        if (code) {
+          var key = 'crf.err.' + code;
+          var s = I18n.t(key);
+          if (s && s !== key) return s;
+        }
+        return (e && e.message) || String(e);
+      }
       if (crfBtn && crfFile) {
         crfBtn.onclick = function () { crfFile.click(); };
         crfFile.onchange = function () {
           var f = crfFile.files && crfFile.files[0];
           crfFile.value = '';
           if (!f) return;
-          App.toast(I18n.t('toast.importing'));
+          App.toast(I18n.t('crf.importing'));
           CrfStore.importZip(f).then(function (v) {
             return CrfStore.get(v.id).then(function (rec) {
               var base = Avatar.skinsIndex || [];
@@ -883,10 +921,10 @@
               Avatar.skinsIndex = base;
               Config.set('state.skin', v.id);
               App.renderSkins();
-              App.toast(I18n.t('toast.imported') + v.id);
+              App.toast(I18n.t('crf.imported') + v.id);
             });
           }).catch(function (e) {
-            App.toast(I18n.t('toast.importFail') + e.message, true);
+            App.toast(crfErrText(e), true);
           });
         };
       }
@@ -894,15 +932,15 @@
       if (crfRm) {
         crfRm.onclick = function () {
           var list = CrfStore.list();
-          if (!list.length) { App.toast(I18n.t('skin.noImported')); return; }
+          if (!list.length) { App.toast(I18n.t('crf.none')); return; }
           var last = list[list.length - 1];
           CrfStore.remove(last.id).then(function () {
             Avatar.skinsIndex = (Avatar.skinsIndex || []).filter(function (x) {
               return x.id !== last.id;
             });
             App.renderSkins();
-            App.toast(I18n.t('toast.removed') + last.id);
-          }).catch(function (e) { App.toast(I18n.t('toast.removeFail') + e.message, true); });
+            App.toast(I18n.t('crf.removed') + last.id);
+          }).catch(function (e) { App.toast(crfErrText(e), true); });
         };
       }
       var peopleBtn = document.getElementById('btn-world-people');
@@ -1052,6 +1090,19 @@
               ? I18n.t('posture.sit') : I18n.t('posture.stand'))
           : '';
       }
+      var sitVarBtn = document.getElementById('btn-sit-variant');
+      if (sitVarBtn) {
+        var canSitVar = window.Avatar && Avatar.sittingSwitchable && Avatar.sittingSwitchable();
+        sitVarBtn.classList.toggle('hidden', !canSitVar);
+        sitVarBtn.textContent = canSitVar
+          ? (Avatar.currentSittingVariant() === 'sitting_agura'
+              ? I18n.t('posture.sitNormal') : I18n.t('posture.agura'))
+          : '';
+        sitVarBtn.title = canSitVar
+          ? (Avatar.currentSittingVariant() === 'sitting_agura'
+              ? I18n.t('posture.sitNormalTip') : I18n.t('posture.aguraTip'))
+          : '';
+      }
       var todBtn = document.getElementById('btn-tod-label');
       if (todBtn) todBtn.textContent = World.todLabel(st.tod);
       var dd = document.getElementById('drawer-day');
@@ -1066,8 +1117,33 @@
       App.refreshHud();
     },
 
+    /* ---------------------------------------------------- storage pressure */
+    /* Every store in this app writes under its own key and each of them used to
+       swallow QuotaExceededError (settings / game / daily / alarms / memory),
+       so a full origin looked like "things quietly stopped being saved" and
+       only showed up as an older state after a restart (issue #14). We cannot
+       rewrite every writer from here, but we can tell the player the truth:
+       one canary write, checked at most once a minute, one toast per session. */
+    _storageProbe: 'ryza.probe',
+    _storageFull: false,
+    _storageCheckedAt: 0,
+    _checkStorage: function (force) {
+      var now = Date.now();
+      if (!force && now - (App._storageCheckedAt || 0) < 60000) return App._storageFull;
+      App._storageCheckedAt = now;
+      var full = false;
+      try {
+        localStorage.setItem(App._storageProbe, '1');
+        localStorage.removeItem(App._storageProbe);
+      } catch (e) { full = true; }
+      if (full && !App._storageFull) App.toast(I18n.t('toast.storageFull'), true);
+      App._storageFull = full;
+      return full;
+    },
+
     /* RPG strip: apples (StaminaAppleRow) + coin + level. */
     refreshHud: function () {
+      App._checkStorage();
       var chip = document.getElementById('hud-stamina');
       if (chip) {
         var a = Game.apples();
@@ -1481,17 +1557,6 @@
           App.toggleNsfw();
         };
       }
-      document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape') {
-          var hasOpenSheet = ['sheet-mode', 'sheet-inv', 'sheet-status', 'sheet-npc', 'sheet-lang'].some(function (id) {
-            var s = document.getElementById(id);
-            return s && !s.classList.contains('hidden');
-          });
-          if (hasOpenSheet) {
-            App.closeSheets();
-          }
-        }
-      });
     },
 
     _showFaint: function () {
@@ -1533,6 +1598,14 @@
     },
 
     /* ------------------------------------------------------- status sheet */
+    /* The status sheet's rest button: { ok, why } where why is 'full' | 'day'. */
+    _canRest: function () {
+      if (Game.cheat() || Game.s.stamina >= Game.max()) return { ok: false, why: 'full' };
+      var tod = Config.section('state').tod;
+      if (tod !== 'eve' && tod !== 'ngt') return { ok: false, why: 'day' };
+      return { ok: true, why: '' };
+    },
+
     renderStatus: function () {
       var root = document.getElementById('status-body');
       if (!root) return;
@@ -1560,6 +1633,26 @@
       }
       sect(I18n.t('st.level') + ' ' + Game.level());
       row(I18n.t('stamina') || 'スタミナ', appleHtml + ' <b>' + (Game.cheat() ? '∞' : Game.s.stamina + '/' + Game.max()) + '</b>');
+      /* Issue #18: sleeping restored stamina only when the model remembered to
+         emit `stage: sleep`. A deterministic way home — gated so it does not
+         turn stamina into a free resource: evening/night only, and not when
+         already full. Same path as the faint screen's button (_sleepHome). */
+      var rest = App._canRest();
+      var rr = row('', '');
+      var rv = rr.querySelector('.st-v');
+      var rb = document.createElement('button');
+      rb.type = 'button';
+      rb.className = 'mini-btn';
+      rb.textContent = I18n.t('stamina.sleep');
+      rb.disabled = !rest.ok;
+      rb.onclick = function () { if (App._canRest().ok) App._sleepHome(); };
+      rv.appendChild(rb);
+      if (!rest.ok) {
+        var rh = document.createElement('span');
+        rh.className = 'st-hint';
+        rh.textContent = ' ' + I18n.t(rest.why === 'full' ? 'st.restFull' : 'st.restNight');
+        rv.appendChild(rh);
+      }
       row(I18n.t('st.exp'), e.into + ' / ' + e.span + '（' + Game.s.exp_total + '）');
       row('G', Game.cheat() ? '∞' : String(Game.s.money));
       var q = Quests.active();
@@ -1717,10 +1810,8 @@
       var exit = document.exitFullscreen || document.webkitExitFullscreen;
       if (!cur) {
         req && req.call(el);
-        Config.set('app.fullscreen', true);
       } else {
         exit && exit.call(document);
-        Config.set('app.fullscreen', false);
       }
     },
 
@@ -1765,6 +1856,12 @@
     say: function (text) {
       if (window.Session) {
         return Session.say(text).catch(function () {});
+      }
+      var st = Config.section('state');
+      if (!Config.llmReady()) {
+        App.toast(I18n.t('toast.needKey'), true);
+        App.showView('settings');
+        return;
       }
     },
 
@@ -2292,13 +2389,29 @@
     },
 
     /* ------------------------------------------------------------ memory */
+    MEMORY_MAX: 400,          /* raw diary cap; the cards above are the long term */
     remember: function (who, text) {
       App.memory.push({ who: who, text: text, at: Date.now() });
-      if (App.memory.length > 400) App.memory = App.memory.slice(-400);
+      if (App.memory.length > App.MEMORY_MAX) {
+        App.memory = App.memory.slice(-App.MEMORY_MAX);
+      }
       App.saveMemory();
     },
+    /* true = written. On quota the in-memory log is kept and the player is
+       told once — before this, the write failed silently and the log simply
+       reverted to an older copy on the next launch (issue #14). */
     saveMemory: function () {
-      try { localStorage.setItem(MEM_KEY, JSON.stringify(App.memory)); } catch (e) {}
+      try {
+        localStorage.setItem(MEM_KEY, JSON.stringify(App.memory));
+        App._memSaveWarned = false;
+        return true;
+      } catch (e) {
+        if (!App._memSaveWarned) {
+          App._memSaveWarned = true;
+          App.toast(I18n.t('memory.saveFail'), true);
+        }
+        return false;
+      }
     },
     renderMemory: function () {
       var root = document.getElementById('memory-list');
@@ -2345,9 +2458,17 @@
       if (App.memory && App.memory.length) {
         var h2 = document.createElement('div');
         h2.className = 'mem-layer';
-        h2.textContent = T('memory.log');
+        h2.textContent = T('memory.log') + ' (' + App.memory.length + ')';
         root.appendChild(h2);
-        App.memory.slice().reverse().slice(0, 40).forEach(function (m) {
+        if (App.memory.length >= App.MEMORY_MAX) {
+          var cap = document.createElement('div');
+          cap.className = 'hint';
+          cap.textContent = I18n.tf('memory.logCap', '只保留最近 {n} 条对白', { n: App.MEMORY_MAX });
+          root.appendChild(cap);
+        }
+        /* Show every stored line, not the last 40: the rest were in storage
+           all along, and hiding them read as "the memory deletes itself". */
+        App.memory.slice().reverse().forEach(function (m) {
           var el = document.createElement('div');
           el.className = 'card';
           el.innerHTML = '<div class="card-title"><span class="tag' +
@@ -2414,8 +2535,8 @@
 
     _fetchModels: function () {
       var llm = Config.section('llm');
-      if (!llm.apiKey) { App.toast(I18n.t('toast.needKey'), true); return; }
       if (!llm.baseUrl) { App.toast(I18n.t('toast.needUrl'), true); return; }
+      if (!Config.llmReady()) { App.toast(I18n.t('toast.needKey'), true); return; }
       App.toast(I18n.t('toast.modelsWait'));
       Api.listModels().then(function (list) {
         App._llmModels = list || [];

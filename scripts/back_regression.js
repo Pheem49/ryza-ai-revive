@@ -43,7 +43,7 @@ function makeEl(id) {
        seeded element must start enabled for the title-screen back path to
        be reachable in the test */
     disabled: false,
-    appendChild() {}, removeChild() {}, remove() {}, focus() {},
+    appendChild(c) { (this._kids = this._kids || []).push(c); }, removeChild() {}, remove() {}, focus() {},
     querySelector(sel) { return makeEl(id + sel); },
     querySelectorAll() { return []; },
     /* Fx._drawConfetti/_drawFire/_drawVoice read host.clientWidth off
@@ -110,7 +110,10 @@ const document = {
                  .filter((el) => el.classList.contains(m[1]));
   },
   createElement(t) { return makeEl('dyn-' + t); },
-  addEventListener() {},
+  /* back.js wires Esc here; keep the listeners so the test can fire it */
+  _listeners: {},
+  addEventListener(type, fn) { (this._listeners[type] = this._listeners[type] || []).push(fn); },
+  removeEventListener(type, fn) { this._listeners[type] = (this._listeners[type] || []).filter((f) => f !== fn); },
   hidden: false
 };
 /* Onboarding.showTitle does document.body.classList.add('boot') before wiring
@@ -302,6 +305,30 @@ const R = sandbox.RyzaShell;
     el.classList.remove('hidden');
     ok(R.handleBack() === true, id + ' open: back consumed');
     ok(el.classList.contains('hidden'), id + ' closed by back');
+  }
+
+  /* 3b. desktop/browser: Esc and the × close a sheet (the status sheet had
+     no closer at all off Android). Esc never "starts" the title screen. */
+  const esc = () => {
+    const ev = { key: 'Escape', defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+    (document._listeners.keydown || []).forEach((fn) => fn(ev));
+    return ev;
+  };
+  const stSheet = document.getElementById('sheet-status');
+  const title = document.getElementById('overlay-title');
+  stSheet.classList.remove('hidden');
+  title.classList.remove('hidden');
+  esc();
+  ok(!stSheet.classList.contains('hidden') && !title.classList.contains('hidden'),
+     'Esc on the title screen does nothing (reverse check)');
+  title.classList.add('hidden');
+  ok(esc().defaultPrevented && stSheet.classList.contains('hidden'), 'Esc closes the status sheet');
+  for (const id of sheets) {
+    const el = document.getElementById(id);
+    const x = (el._kids || []).find((k) => k.className === 'sheet-close');
+    el.classList.remove('hidden');
+    if (x) x.click();
+    ok(x && el.classList.contains('hidden'), id + ' has a working ×');
   }
 
   /* 4. full-screen views: back returns to talk, never exits.

@@ -250,8 +250,9 @@
           { hint: T('settings.localEngineHint') });
         App._field(w, T('settings.localStyle'), Config.section('tts')[lrow.creds.voice.split('.').pop()],
           function (v) { Config.set(lrow.creds.voice, v); });
-        App._field(w, T('settings.speakHint'), Config.section('tts').styleHint,
-          function (v) { Config.set('tts.styleHint', v); }, { multi: true });
+        App._field(w, T('settings.styleHint'), Config.section('tts').styleHint,
+          function (v) { Config.set('tts.styleHint', v); },
+          { multi: true, hint: T('settings.styleHint.hint') });
       } else {
       App._field(w, T('settings.baseUrl'), Config.section('tts').baseUrl,
         function (v) { Config.set('tts.baseUrl', v); });
@@ -549,7 +550,7 @@
 
     _testLlm: function () {
       var llm = Config.section('llm');
-      if (!llm.apiKey) { App.toast(I18n.t('toast.needKey'), true); return; }
+      if (!Config.llmReady()) { App.toast(I18n.t('toast.needKey'), true); return; }
       App.toast(I18n.t('toast.testing'));
       /* stand-alone: testing the endpoint must not supersede (and so silently
          discard) a reply the player is waiting for. */
@@ -598,6 +599,9 @@
         function (v) { Config.set('chara.callMe', v); });
       App._field(w, T('chara.extra'), c.extra,
         function (v) { Config.set('chara.extra', v); }, { multi: true });
+      App._field(w, T('chara.override'), c.systemPromptOverride,
+        function (v) { Config.set('chara.systemPromptOverride', v); },
+        { multi: true, hint: T('chara.override.hint') });
 
       App._title(w, T('chara.playerTitle'));
       App._field(w, T('onb.name'), p.name,
@@ -680,6 +684,7 @@
         history: App.history,
         memory: App.memory,
         longmem: window.Memory ? Memory.snapshot() : null,
+        longterm: window.LongTerm ? LongTerm.snapshot() : null,
         game: Game.snapshot(),
         daily: JSON.parse(localStorage.getItem('ryza.daily.v1') || 'null'),
         alarms: Alarm.items
@@ -696,6 +701,9 @@
       App.memory = snap.memory || [];
       App.saveMemory();
       if (window.Memory) Memory.restore(snap.longmem);
+      /* Long-term entries are part of the same point-in-time state; a slot
+         without the field (an older save) must not touch them. */
+      if (window.LongTerm && snap.longterm) LongTerm.restore(snap.longterm);
       Game.restoreSnapshot(snap.game);
       try { localStorage.setItem('ryza.daily.v1', JSON.stringify(snap.daily || { lastDate: '', streak: 0, claimedDays: [] })); } catch (e) {}
       Daily.load();

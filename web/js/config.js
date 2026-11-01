@@ -119,7 +119,13 @@
       dislikes: 'じっとしていること',
       situation: 'クーケン島の自分の家で、君と一緒に過ごしている',
       callMe: '君',
-      extra: ''
+      extra: '',
+      /* Optional replacement for the built-in Ryza character block. Empty =
+         ship the default. When set, it swaps ONLY the character description;
+         the reply protocol (tag line + <state>), the output-language rules and
+         the per-turn scene block still come from api.js, so a custom persona
+         can't break the avatar or the RPG state. */
+      systemPromptOverride: ''
     },
 
     /* ---- player profile (onboarding answers) ---- */
@@ -139,7 +145,6 @@
       volume: 0.9,
       textSpeed: 30,                 // ms per character (×1; see TEXT_SPEEDS)
       vibration: true,
-      fullscreen: false,
       rim: true,
       nsfwEnabled: false,            // explicit user permission; AI cannot enable it when off
       showBubble: true,              // talk bubbles over the stage (auto-fade)
@@ -166,6 +171,12 @@
          shipped pack that is 隠れ家前 / stage_01_002_01 alone; every other
          scene dictates its own posture (Avatar.postureKey reads the scene). */
       posture: 'posture_standing',
+      /* Seated variant inside the sitting skeleton: 'sitting_normal' (the
+         outfit's own default) or 'sitting_agura' (cross-legged). Only honoured
+         while a sitting skin is loaded and the worn outfit's gesture table
+         actually ships that id — see Avatar.sittingVariants. Empty = the
+         outfit default. A stage change clears it (App._loadSceneFor). */
+      sittingVariant: '',
       day: 1,
       lastDayDate: '',
       /* flow-mode in-game clock: gameHour (0-24) + the real ms it was last
@@ -193,11 +204,38 @@
     return out;
   }
 
-  var data;
+  /* First launch only (nothing saved yet): pick the UI language from the
+     device instead of always starting in Chinese — a player who cannot read
+     the first screen cannot find the language switch on it either. A saved
+     choice always wins; a device language we do not ship falls to English. */
+  function deviceLang() {
+    var nav = (typeof navigator !== 'undefined' && navigator) || {};
+    var list = (nav.languages && nav.languages.length) ? nav.languages : [nav.language];
+    for (var i = 0; i < list.length; i++) {
+      var l = String(list[i] || '').toLowerCase();
+      if (!l) continue;
+      if (/^zh-(tw|hk|mo)|^zh-hant/.test(l)) return 'zh-tw';
+      if (/^zh/.test(l)) return 'zh';
+      if (/^ja/.test(l)) return 'ja';
+      if (/^(id|in)(-|$)/.test(l)) return 'id';
+      if (/^hi/.test(l)) return 'hi';
+      if (/^pt/.test(l)) return 'pt-br';
+      if (/^en/.test(l)) return 'en';
+    }
+    return list[0] ? 'en' : '';
+  }
+
+  var data, firstRun = false;
   try {
-    data = deepMerge(DEFAULTS, JSON.parse(localStorage.getItem(KEY) || '{}'));
+    var saved = localStorage.getItem(KEY);
+    firstRun = !saved;
+    data = deepMerge(DEFAULTS, JSON.parse(saved || '{}'));
   } catch (e) {
     data = deepMerge(DEFAULTS, {});
+  }
+  if (firstRun) {
+    var dl = deviceLang();
+    if (dl) data.app.lang = dl;
   }
   if (data.state && data.state.skin) {
     data.state.skin = String(data.state.skin).replace(/_(01|99)$/, '');
@@ -275,6 +313,25 @@
     },
     get: function () { return data; },
     section: function (name) { return data[name]; },
+    /* Whether the chat endpoint is usable at all. A key is required, except
+       for a loopback base URL: a local server (Ollama, LM Studio, llama.cpp)
+       usually has no key, and asking the player to type a fake one was the
+       whole of issue #17's friction. Same loopback rule as /_proxy. */
+    llmReady: function () {
+      var llm = data.llm || {};
+      if (llm.apiKey) return true;
+      return Config.isLoopbackUrl(llm.baseUrl);
+    },
+    isLoopbackUrl: function (url) {
+      var m = /^https?:\/\/(\[[^\]]*\]|[^\/:?#]+)/i.exec(String(url || '').trim());
+      if (!m) return false;
+      var h = m[1].replace(/^\[|\]$/g, '').toLowerCase();
+      if (h === 'localhost' || h === '::1') return true;
+      var q = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
+      if (!q || q[1] !== '127') return false;
+      for (var i = 2; i <= 4; i++) if (Number(q[i]) > 255) return false;
+      return true;
+    },
     set: function (path, value) {
       var parts = path.split('.'), node = data, i;
       for (i = 0; i < parts.length - 1; i++) {

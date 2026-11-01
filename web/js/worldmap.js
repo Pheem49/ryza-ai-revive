@@ -247,7 +247,6 @@
       root.classList.add('wmp-on');
 
       var self = this;
-      var day = st.day || 1;
 
       /* ---- 地图主体（铺满） ---- */
       var map = document.createElement('div');

@@ -50,26 +50,77 @@
 
   var state = blank();
   var busy = false;
+  /* 上一次读到的、能解析的原文。persist 会把它转存到备份键，
+     主键被写坏（配额截断 / 写一半被杀）时还能回滚。 */
+  var lastGood = '';
+  var lastLoad = 'empty';   /* ok | recovered | corrupt | empty（给 UI 一句实话） */
+  var persistOk = true;
 
+  function normalize(j) {
+    if (!j || typeof j !== 'object' || j.v !== 1) return null;
+    if (!Array.isArray(j.sessions) || !Array.isArray(j.summaries)) return null;
+    return {
+      v: 1,
+      pending: Array.isArray(j.pending) ? j.pending : [],
+      sessions: j.sessions.filter(validCard),
+      summaries: j.summaries.filter(validCard)
+    };
+  }
+
+  function readKey(key) {
+    try {
+      var raw = global.localStorage.getItem(key);
+      return raw ? normalize(JSON.parse(raw)) : null;
+    } catch (e) { return null; }
+  }
+
+  /* true = 写进去了。false = 配额满/被拒——上层要能说出来，不能只会丢数据。 */
   function persist() {
-    try { global.localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+    var text;
+    try { text = JSON.stringify(state); } catch (e) { persistOk = false; return false; }
+    try {
+      /* 先备份上一份好数据，再覆盖主键：
+         主键写一半就断电/被杀时，load 还能从备份回来。 */
+      if (lastGood && lastGood !== text) {
+        try { global.localStorage.setItem(KEY + '.bak', lastGood); } catch (e) {}
+      }
+      global.localStorage.setItem(KEY, text);
+      lastGood = text;
+      persistOk = true;
+      return true;
+    } catch (e) {
+      persistOk = false;
+      return false;
+    }
   }
 
   function load() {
-    try {
-      var raw = global.localStorage.getItem(KEY);
-      var j = raw ? JSON.parse(raw) : null;
-      if (j && j.v === 1 && Array.isArray(j.sessions) && Array.isArray(j.summaries)) {
-        state = {
-          v: 1,
-          pending: Array.isArray(j.pending) ? j.pending : [],
-          sessions: j.sessions.filter(validCard),
-          summaries: j.summaries.filter(validCard)
-        };
-        return;
-      }
-    } catch (e) {}
+    var raw = null;
+    try { raw = global.localStorage.getItem(KEY); } catch (e) {}
+    var primary = readKey(KEY);
+    if (primary) {
+      state = primary;
+      lastGood = JSON.stringify(state);
+      lastLoad = 'ok';
+      return state;
+    }
+    /* 主键在但读不出来：先把原文留一份，供人工/以后抢救；不删原键。 */
+    if (raw) {
+      try {
+        if (!global.localStorage.getItem(KEY + '.corrupt')) {
+          global.localStorage.setItem(KEY + '.corrupt', raw);
+        }
+      } catch (e) {}
+    }
+    var backup = readKey(KEY + '.bak');
+    if (backup) {
+      state = backup;
+      lastLoad = 'recovered';
+      return state;
+    }
     state = blank();
+    lastLoad = raw ? 'corrupt' : 'empty';
+    return state;
   }
 
   function validCard(c) {
@@ -157,7 +208,6 @@
   }
 
   function flushPending() {
-    var c = cfg();
     if (!state.pending.length) return Promise.resolve(false);
     var batch = state.pending.slice();
     state.pending = [];
@@ -185,12 +235,21 @@
     KEY: KEY,
     load: load,
     save: persist,
+
+    /* 最近一次 load 的结果：ok / recovered（用了备份）/ corrupt / empty。
+       UI 可以据此说一句实话，而不是让玩家过几天才发现记忆没了。 */
+    lastLoad: function () { return lastLoad; },
+    /* 最近一次写入是否成功（配额满了会 false；数据仍在内存里）。 */
+    lastWriteOk: function () { return persistOk; },
     cfg: cfg,
     snapshot: function () {
       return JSON.parse(JSON.stringify(state));
     },
     restore: function (snap) {
-      if (!snap || typeof snap !== 'object') { state = blank(); persist(); return; }
+      /* An old save slot has no `longmem` field at all. That must NOT wipe
+         today's cards — the slot simply cannot speak about this layer. */
+      if (snap == null) return false;
+      if (typeof snap !== 'object') { state = blank(); persist(); return true; }
       state = {
         v: 1,
         pending: Array.isArray(snap.pending) ? snap.pending : [],
@@ -198,6 +257,7 @@
         summaries: (snap.summaries || []).filter(validCard)
       };
       persist();
+      return true;
     },
     reset: function () { state = blank(); persist(); },
 

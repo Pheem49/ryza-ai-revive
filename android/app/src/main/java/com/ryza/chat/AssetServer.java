@@ -193,7 +193,7 @@ public final class AssetServer extends Thread {
             up.setReadTimeout(180000);
             up.setDoOutput(true);
             up.setRequestProperty("Content-Type", hs.contentType);
-            up.setRequestProperty("User-Agent", "RyzaChat/1.2.22");
+            up.setRequestProperty("User-Agent", "RyzaChat/1.2.23");
             if (hs.authorization != null) up.setRequestProperty("Authorization", hs.authorization);
             if (hs.apiKey != null) up.setRequestProperty("api-key", hs.apiKey);
             if (hs.model != null) up.setRequestProperty("model", hs.model);
@@ -238,7 +238,7 @@ public final class AssetServer extends Thread {
             up.setConnectTimeout(20000);
             up.setReadTimeout(120000);
             up.setInstanceFollowRedirects(true);
-            up.setRequestProperty("User-Agent", "RyzaChat/1.2.22");
+            up.setRequestProperty("User-Agent", "RyzaChat/1.2.23");
             if (hs != null && hs.authorization != null) up.setRequestProperty("Authorization", hs.authorization);
             if (hs != null && hs.apiKey != null) up.setRequestProperty("api-key", hs.apiKey);
             if (hs != null && hs.model != null) up.setRequestProperty("model", hs.model);

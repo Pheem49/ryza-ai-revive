@@ -101,5 +101,67 @@ console.log('\n# 6. 非法坐姿被拒');
   eq(Avatar._sittingId, 'sitting_normal', '拒绝后坐姿不变');
 }
 
+/* 7. #13：盘腿要有玩家可点的入口（官方权重把自动切换关掉了，只读数据永远
+   看不到 agura）。这里钉住「数据驱动 + 能记住 + 站姿不显示」三件事。 */
+console.log('\n# 7. 坐姿变体的可切换性（#13 盘腿）');
+{
+  Avatar.gesture = g;
+  Avatar._loadedSkelId = 'crf_skn_002_0001_01';
+  eq(Avatar.sittingVariants().join(','), 'sitting_normal,sitting_agura',
+     '官方坐装有两个坐姿变体');
+  eq(Avatar.sittingSwitchable(), true, '坐着时盘腿切换键可用');
+
+  Avatar.setSittingVariant('sitting_agura');
+  eq(Avatar.currentSittingVariant(), 'sitting_agura', '点了之后是盘腿');
+  eq(sandbox.Config.section('state').sittingVariant, 'sitting_agura',
+     '坐姿变体写进存档（setEmotion 每轮都会重设 _sittingId）');
+  eq(Avatar._sittingFromPosture(), 'sitting_agura',
+     '_sittingFromPosture 会读回玩家选的盘腿');
+
+  /* 站着时不显示，也不把盘腿算进来 */
+  Avatar._loadedSkelId = 'crf_skn_002_0001_99';
+  eq(Avatar.sittingSwitchable(), false, '站着时不显示盘腿键');
+  eq(Avatar._sittingFromPosture(), 'sitting_normal', '站姿下不保留坐姿变体');
+
+  /* 旧存档里的脏值必须回落，而不是把 _sittingId 设成不存在的 id */
+  Avatar._loadedSkelId = 'crf_skn_002_0001_01';
+  sandbox.Config.set('state.sittingVariant', 'sitting_bogus');
+  eq(Avatar._sittingFromPosture(), 'sitting_normal', '未知的存档值回落普通坐姿');
+  sandbox.Config.set('state.sittingVariant', '');
+}
+
+console.log('\n# 8. 反向对照：只有一种坐姿的服装不出现切换键');
+{
+  const g3 = JSON.parse(JSON.stringify(g));
+  g3.emotionalGesture.SittingSets = g3.emotionalGesture.SittingSets
+    .filter(x => x.newId === 'sitting_normal' && x.previousId === 'sitting_normal');
+  Avatar.gesture = g3;
+  Avatar._loadedSkelId = 'crf_skn_002_0001_01';
+  eq(Avatar.sittingVariants().join(','), 'sitting_normal', '单变体只列一个 id');
+  eq(Avatar.sittingSwitchable(), false, '单变体不显示切换键');
+  let err = null;
+  Avatar.setSittingVariant('sitting_agura', function (e) { err = e; });
+  ok(!!err, '数据里没有的坐姿被拒（导入 ZIP 也一样）');
+  Avatar.gesture = g;   /* 还原 */
+}
+
+/* 9. UI 入口与文案：数据能切，还得有人能点到它（#13 的原始问题是「怎么激活」）。 */
+console.log('\n# 9. 盘腿键的 UI 与文案');
+{
+  const html = fs.readFileSync(path.join(ROOT, 'web/index.html'), 'utf8');
+  ok(/id="btn-sit-variant"/.test(html), 'index.html 有盘腿键');
+  const appjs = fs.readFileSync(path.join(ROOT, 'web/js/app.js'), 'utf8');
+  ok(/btn-sit-variant/.test(appjs) && /sittingSwitchable/.test(appjs),
+     'app.js 按 sittingSwitchable 显示它');
+  ok(/posture\.aguraTip/.test(appjs) && /posture\.sitNormal/.test(appjs),
+     '标签用动作语义（点下去会发生什么），不是当前状态');
+  const i18n = fs.readFileSync(path.join(ROOT, 'web/js/i18n.js'), 'utf8');
+  ['posture.agura', 'posture.aguraTip', 'posture.sitNormal', 'posture.sitNormalTip']
+    .forEach(k => {
+      const n = (i18n.match(new RegExp("'" + k.replace('.', '\\.') + "'\\s*:", 'g')) || []).length;
+      ok(n >= 4, k + ' 在 zh/ja/en/id 四语里都有词（找到 ' + n + ' 处）');
+    });
+}
+
 console.log('\n' + (fail === 0 ? 'ALL PASS' : 'FAILED ' + fail));
 process.exit(fail === 0 ? 0 : 1);

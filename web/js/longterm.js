@@ -56,6 +56,7 @@
 
   var _llm = null;      /* fn(system, user, opts) -> Promise<string> */
   var _clock = null;    /* fn() -> { iso, day } */
+  var _writeOk = true;  /* 最近一次 persist 是否真的写进去了 */
 
   function nowInfo() {
     if (_clock) return _clock();
@@ -99,14 +100,17 @@
 
   function persist() {
     try {
-      /* 序列化上限：条目上限之外再兜一层，防单条超长 */
+      /* 序列化上限：entry 数由 enforceLimit() 保证（受保护条目可超上限，
+         它们就是不丢的东西）；digest / pending 各自有上限。 */
       var out = {
         v: 1, updatedAt: state.updatedAt, digest: clip(state.digest, DIGEST_MAX),
-        entries: state.entries.slice(0, ENTRY_LIMIT).map(normEntry),
+        entries: state.entries.map(normEntry),
         pending: state.pending.slice(-PENDING_MAX)
       };
       localStorage.setItem(KEY, JSON.stringify(out));
-    } catch (e) { /* 配额满了也不能崩 */ }
+      _writeOk = true;
+      return true;
+    } catch (e) { _writeOk = false; return false; /* 配额满了不能崩，由 lastWriteOk 告知 */ }
   }
 
   function validEntry(e) {
@@ -162,20 +166,29 @@
   /* 超上限时：受保护的留住，其余折进 digest 的说明里（不静默删除） */
   function enforceLimit() {
     if (state.entries.length <= ENTRY_LIMIT) return 0;
-    var sorted = state.entries.slice().sort(function (a, b) {
-      var pa = isProtected(a) ? 1 : 0, pb = isProtected(b) ? 1 : 0;
-      if (pa !== pb) return pb - pa;                 /* 受保护优先留 */
-      return (b.importance - a.importance) ||
-             String(b.date).localeCompare(String(a.date));
+    /* 受保护条目**全部**留下（上限只用于非受保护条目）——
+       原文保证「受保护类别或重要度 5 的条目不静默丢弃」，
+       早先的版本把超额受保护条目也折进 digest，等于让承诺只对前 40 条成立。 */
+    var keepIds = {};
+    var protectedCount = 0;
+    state.entries.forEach(function (e) {
+      if (isProtected(e)) { keepIds[e.id] = 1; protectedCount++; }
     });
-    var keep = sorted.slice(0, ENTRY_LIMIT);
-    var fold = sorted.slice(ENTRY_LIMIT);
-    state.entries = keep;
-    if (fold.length) {
-      var note = fold.map(function (e) { return e.date + ' ' + e.summary; }).join('；');
+    var room = Math.max(0, ENTRY_LIMIT - protectedCount);
+    var rest = state.entries.filter(function (e) { return !keepIds[e.id]; })
+      .sort(function (a, b) {
+        return (b.importance - a.importance) ||
+               String(b.date).localeCompare(String(a.date));
+      });
+    rest.slice(0, room).forEach(function (e) { keepIds[e.id] = 1; });
+    /* 保留原顺序，只删掉真正被折叠的那些 */
+    var folded = state.entries.filter(function (e) { return !keepIds[e.id]; });
+    state.entries = state.entries.filter(function (e) { return !!keepIds[e.id]; });
+    if (folded.length) {
+      var note = folded.map(function (e) { return e.date + ' ' + e.summary; }).join('；');
       state.digest = clip((state.digest ? state.digest + ' ' : '') + note, DIGEST_MAX);
     }
-    return fold.length;
+    return folded.length;
   }
 
   /* 去重键：日期 + 归一化摘要（去标点/空白/大小写）前 14 字。
@@ -242,6 +255,9 @@
     setClock: function (fn) { _clock = (typeof fn === 'function') ? fn : null; },
 
     load: load,
+
+    /* 最近一次写入是否成功（配额满时 false；内存里的状态不丢）。 */
+    lastWriteOk: function () { return _writeOk; },
 
     /* 记一轮对话（未归纳）。够 PENDING_MAX 就尝试归纳一次。 */
     note: function (role, text, opts) {
@@ -354,6 +370,22 @@
         v: 1, updatedAt: state.updatedAt, digest: state.digest,
         entries: state.entries.map(normEntry)
       });
+    },
+
+    /* 存档槽用：快照里存的是这份 JSON 字符串。
+       与 import 的区别是 restore 是**替换**（存档是一份时间点），
+       并且读不出来时什么都不改（不能因为一个坏字段清空记忆）。 */
+    snapshot: function () { return LongTerm.export(); },
+    restore: function (json) {
+      var obj = null;
+      try { obj = (typeof json === 'string') ? JSON.parse(json) : json; } catch (e) { return false; }
+      if (!obj || typeof obj !== 'object' || !Array.isArray(obj.entries)) return false;
+      state.digest = clip(obj.digest, DIGEST_MAX);
+      state.entries = obj.entries.filter(validEntry).map(normEntry);
+      state.updatedAt = String(obj.updatedAt || state.updatedAt || '');
+      enforceLimit();
+      persist();
+      return true;
     },
     import: function (json) {
       var obj = null;

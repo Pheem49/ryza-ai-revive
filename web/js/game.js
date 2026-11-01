@@ -375,15 +375,25 @@
         Game.addMoney(md);
         applied.push('money' + (md >= 0 ? '+' : '') + md);
       }
+      var gathered = 0;
       [['inventory_added', 'you'], ['ryza_inventory_added', 'ryza']].forEach(function (pair) {
         ((Array.isArray(d[pair[0]]) && d[pair[0]]) || []).forEach(function (it) {
           if (!it || (typeof it !== 'string' && typeof it !== 'object')) return;
           var id = typeof it === 'string' ? it : it.id;
-          if (Game.addItem(pair[1], id, typeof it === 'object' ? it.count : 1)) {
+          var n = typeof it === 'object' ? it.count : 1;
+          if (Game.addItem(pair[1], id, n)) {
             applied.push(pair[0] + ':' + id);
+            gathered += Math.max(1, num(n) || 1);
           }
         });
       });
+      /* Issue #18: models narrate "we found the materials" and add the items,
+         but rarely also emit quest.step_add, so a gather quest never moved.
+         Items that actually landed in a bag count as gather progress — unless
+         the same block already speaks for the quest, which would double-count. */
+      if (gathered && !d.quest && window.Quests && Quests.progressEvent) {
+        if (Quests.progressEvent('gather', gathered)) applied.push('quest:gather');
+      }
       [['inventory_removed', 'you'], ['ryza_inventory_removed', 'ryza']].forEach(function (pair) {
         ((Array.isArray(d[pair[0]]) && d[pair[0]]) || []).forEach(function (it) {
           if (!it || (typeof it !== 'string' && typeof it !== 'object')) return;
@@ -422,7 +432,7 @@
       L.push('## ゲーム状態');
       L.push('- レベル ' + Game.level() + '（累計経験値 ' + s.exp_total + '）');
       L.push('- スタミナ ' + (Game.cheat() ? '∞' : (s.stamina + '/' + Game.max())) +
-             '：活動や戦闘で減る。ゼロだとあたしは気絶しちゃう。');
+             '：活動や戦闘で減る。ゼロだとあたしは気絶しちゃう。眠れば全回復（1行目に stage: sleep）。');
       L.push('- 所持金 ' + (Game.cheat() ? '∞' : (s.money + 'G')) + '（この世界のお金）');
       L.push('- あなたのバッグ：' + invBrief(s.inventory));
       L.push('- あたしのバッグ：' + invBrief(s.ryza_inventory));

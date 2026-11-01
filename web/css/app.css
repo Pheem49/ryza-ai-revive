@@ -201,6 +201,8 @@ body.boot #topbar > #winctl{display:flex;pointer-events:auto;
 .mini-btn{font-size:12px;padding:6px 11px;border-radius:9px;border:1px solid var(--line);
   background:rgba(232,180,92,.1);transition:.15s}
 .mini-btn:active{transform:scale(.96)}
+.mini-btn:disabled{opacity:.45;cursor:default;transform:none}
+.st-hint{font-size:11px;color:var(--dim)}
 .mini-btn:hover{background:rgba(232,180,92,.2)}
 select{background:rgba(20,14,18,.9);border:1px solid var(--line);border-radius:9px;padding:6px 9px;font-size:13px;
   max-width:46vw;overflow:hidden;text-overflow:ellipsis}
@@ -431,8 +433,6 @@ body.side-open #quick-btns{opacity:0;pointer-events:none;transition:opacity .15s
 .field .hint{font-size:11px;color:#6d5f57;margin-top:4px;line-height:1.5}
 /* 服装页的姿态说明（skin.postureHint） */
 .skin-hint{font-size:11px;color:#8a7a70;padding:2px 14px 8px;line-height:1.5}
-.field-row{display:flex;gap:10px}
-.field-row>*{flex:1;min-width:0}
 .switch-row{display:flex;align-items:center;justify-content:space-between;padding:11px 0;
   border-bottom:1px solid rgba(232,180,92,.12)}
 .switch-row:last-child{border-bottom:0}
@@ -503,6 +503,9 @@ body.side-open #quick-btns{opacity:0;pointer-events:none;transition:opacity .15s
 .sheet-close-btn:hover{background:rgba(232,180,92,.2);border-color:var(--gold);color:var(--gold)}
 .sheet-close-btn:active{transform:scale(.92)}
 .sheet-close-btn svg{display:block}
+.sheet-close{position:absolute;top:6px;right:8px;width:30px;height:30px;border:0;border-radius:99px;
+  background:transparent;color:var(--dim);font-size:20px;line-height:1;cursor:pointer}
+.sheet-close:hover{background:rgba(255,255,255,.08)}
 .sheet h3{margin:0 0 10px;font-size:15px}
 #mode-bar{flex-wrap:wrap}
 
@@ -549,7 +552,6 @@ input[type=range]{width:100%;accent-color:var(--gold)}
 .inv-row{display:flex;justify-content:space-between;padding:10px 4px;border-bottom:1px solid var(--line)}
 .wm-hero{margin-bottom:16px}
 .wm-hero h3{margin:0 0 6px}
-.wm-path{display:flex;flex-direction:column;gap:12px}
 .wm-tile{position:relative;display:flex;align-items:center;gap:12px;padding:8px;cursor:pointer}
 .wm-tile.locked{opacity:.45;cursor:not-allowed}
 .wm-tile .wm-base{width:56px;height:56px}
@@ -658,12 +660,6 @@ input[type=range]{width:100%;accent-color:var(--gold)}
 /* ---------------------------------------------- world map (area plates) */
 /* Official area artwork with calibrated pins. Grid mode is untouched. */
 #world-fields.wmp-on{position:relative;display:block;overflow-y:auto;overflow-x:hidden}
-.wmp-tabs{display:flex;gap:8px;overflow-x:auto;padding-bottom:8px}
-.wmp-tab{padding:4px 12px;border-radius:999px;border:1px solid var(--line);
-  background:transparent;color:var(--dim);cursor:pointer;white-space:nowrap;font-size:12.5px}
-.wmp-tab.on{border-color:var(--gold);color:var(--gold)}
-.wmp-view{position:relative;overflow:hidden;touch-action:none;border-radius:var(--radius);
-  border:1px solid var(--line);aspect-ratio:4/3;background:#0d1016;touch-action:none}
 .wmp-layer{position:absolute;inset:0;transform-origin:50% 50%;transition:transform .18s ease-out}
 .wmp-plate{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;
   -webkit-user-drag:none;user-select:none}

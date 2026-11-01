@@ -579,6 +579,49 @@ for (const skin of SKINS) {
   console.log('OK   blends: wind=add, occupancy=replace');
 })();
 
+/* ---- sitting variant switch (#13): the tap must re-drive the real layers,
+   not just flip a flag the idle reroll might override later. */
+(function checkSittingVariantSwitch() {
+  const skin = SKINS[0];
+  const L = resetAvatar(skin);
+  Avatar.setEmotion('neutral', 'agree', true);
+  stepOnce(L, 'sitting variant baseline');
+  const normalLeg = Avatar._legG && Avatar._legG.GroupId;
+  const normalArm = Avatar._armG && Avatar._armG.GroupId;
+  if (!normalLeg) fail('sitting_normal picked no leg group');
+  if (Avatar._findGroup(normalLeg).ApplicableSittingIDs !== 'sitting_normal') {
+    fail('normal sit picked a leg group not authored for sitting_normal: ' + normalLeg);
+  }
+  /* the data really does ship agura-only leg groups (the switch is not a no-op) */
+  const aguraLegs = Avatar._motionGroups().filter(function (g) {
+    return Avatar._occKind(g) === 'leg' && /agura/.test(String(g.ApplicableSittingIDs));
+  });
+  if (!aguraLegs.length) fail('no leg group authored for sitting_agura in the shipped data');
+
+  Avatar.setSittingVariant('sitting_agura');
+  const aguraLeg = Avatar._legG && Avatar._legG.GroupId;
+  if (!aguraLeg || !/agura/.test(String(Avatar._findGroup(aguraLeg).ApplicableSittingIDs))) {
+    fail('after the switch the leg layer is not an agura group: ' + aguraLeg);
+  }
+  if (aguraLeg === normalLeg) fail('leg layer did not change on the sitting variant switch');
+  /* arms follow idleGroupIds.byPosture (the official per-posture rest group) */
+  if (Avatar._armG && Avatar._armG.GroupId !== 'grp_fg_027') {
+    fail('agura rest arm group should be grp_fg_027, got ' + Avatar._armG.GroupId);
+  }
+
+  Avatar.setSittingVariant('sitting_normal');
+  const backLeg = Avatar._legG && Avatar._legG.GroupId;
+  if (!backLeg || Avatar._findGroup(backLeg).ApplicableSittingIDs !== 'sitting_normal') {
+    fail('switching back did not restore a sitting_normal leg group: ' + backLeg);
+  }
+  if (normalArm && Avatar._armG && Avatar._armG.GroupId !== normalArm) {
+    fail('switching back did not restore the normal rest arm group: ' + Avatar._armG.GroupId);
+  }
+  Config.set('state.sittingVariant', '');
+  console.log('OK   sitting variant switch re-drives legs (' + normalLeg + '→' + aguraLeg +
+              ') and arms, and switches back');
+})();
+
 /* ---- tap hit-test precision (AUDIT §5.6): only inside the author's BB_*
    polygons AND on the visible silhouette; misses must return null (the old
    220u bone-radius fallback was the "点其他地方也触发" misfire). ---- */

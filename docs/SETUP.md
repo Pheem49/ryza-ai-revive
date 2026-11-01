@@ -42,16 +42,24 @@ Ready-to-use examples:
 | Provider | Base URL | Notes |
 |---|---|---|
 | **OpenRouter** | `https://openrouter.ai/api/v1` | Free models exist; they are slower. Key: openrouter.ai/keys |
-| **Ollama** (local) | `http://127.0.0.1:11434/v1` | Desktop only — see below. No key needed (type anything, e.g. `ollama`) |
+| **Ollama** (local) | `http://127.0.0.1:11434/v1` | Same machine as the app — see below. Key may be empty (1.2.23+; older builds: type anything, e.g. `ollama`) |
 | **LM Studio** (local) | `http://127.0.0.1:1234/v1` | Same as above |
 | OpenAI | `https://api.openai.com/v1` | Paid |
 | DeepSeek | `https://api.deepseek.com/v1` | Cheap |
 | Qwen (DashScope) | `https://dashscope.aliyuncs.com/compatible-mode/v1` | Has a free tier |
 
-**Local models on Android do not work.** `127.0.0.1` on a phone is the phone:
-Ollama has to be running on the same machine as the app. Use a hosted provider on
-Android. (On desktop, local HTTP is allowed since 1.2.20 — that is what issue #5
-was about.)
+**Local models must run on the same device as the app.** Plain `http://` is only
+accepted for loopback (`127.0.0.1`, `localhost`, `::1`); anything else must be
+`https://`, so an API key never crosses a network in clear. On desktop that means
+Ollama / LM Studio / llama.cpp on the same PC (allowed since 1.2.20 — issue #5).
+`127.0.0.1` on a phone is the phone, so a PC on your LAN at `http://192.168.x.x`
+is refused; either run the server on the phone itself, or put the PC behind an
+HTTPS endpoint (a reverse proxy or tunnel) and use that `https://` URL.
+
+A model from Hugging Face still needs a server that speaks the OpenAI chat API —
+the app does not load model weights itself. Ollama can pull GGUF files straight
+from Hugging Face (`ollama run hf.co/<user>/<repo>`); then use the Ollama row
+above. For a loopback base URL the key may be left empty (1.2.23+).
 
 ### "I filled it in and it just says Waiting for a reply…"
 

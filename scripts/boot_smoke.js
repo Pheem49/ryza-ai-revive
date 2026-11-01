@@ -238,6 +238,28 @@ for (const f of ['util.js', 'config.js', 'i18n.js', 'api.js', 'providers.js', 't
     sandbox.App.buildCharaForm();
     sandbox.App.updateHud();
     ok(true, 'render surfaces + settings form built');
+
+    /* status-sheet rest button gate (issue #18): evening/night and not full */
+    {
+      const A = sandbox.App, C = sandbox.Config;
+      const tod0 = C.section('state').tod, st0 = g.s.stamina;
+      g.s.stamina = g.max();
+      C.set('state.tod', 'ngt');
+      ok(A._canRest().ok === false && A._canRest().why === 'full', 'rest: full stamina → disabled');
+      g.s.stamina = 1;
+      C.set('state.tod', 'aft');
+      ok(A._canRest().ok === false && A._canRest().why === 'day', 'rest: afternoon → disabled');
+      C.set('state.tod', 'eve');
+      ok(A._canRest().ok === true, 'rest: evening + tired → allowed');
+      C.set('app.cheat', true);
+      ok(A._canRest().ok === false, 'rest: cheat mode (infinite stamina) → disabled');
+      C.set('app.cheat', false);
+      A.renderStatus();
+      A._sleepHome();
+      ok(g.s.stamina === g.max(), 'rest: _sleepHome refills stamina');
+      g.s.stamina = st0;
+      C.set('state.tod', tod0);
+    }
     ok(!!sandbox.Memory && sandbox.Memory.promptBlock() === '', 'Memory module boots empty');
     sandbox.App.renderMemory();
     ok(!sandbox.App._lastText, 'no stale retry text');
@@ -446,6 +468,23 @@ for (const f of ['util.js', 'config.js', 'i18n.js', 'api.js', 'providers.js', 't
     ok(sandbox.App._failKind('model not found') === 'model',
        'a rejected model name still classifies');
     ok(sandbox.App._failKind('') === 'other', 'anything else falls through to other');
+    /* ---- storage pressure canary (issue #14) ----
+       Every store writes under its own key and each of them used to swallow
+       QuotaExceededError, so a full origin meant "saving silently stopped". */
+    ok(sandbox.App._checkStorage(true) === false, 'a writable store is not reported as full');
+    {
+      const realSet = localStorage.setItem;
+      localStorage.setItem = (k, v) => {
+        if (k === sandbox.App._storageProbe) throw new Error('QuotaExceededError');
+        return realSet(k, v);
+      };
+      sandbox.App._storageFull = false;
+      ok(sandbox.App._checkStorage(true) === true,
+         'a refused canary write is reported as storage-full (not swallowed)');
+      ok(sandbox.App._checkStorage(true) === true, 'and it stays reported on the next check');
+      localStorage.setItem = realSet;
+      ok(sandbox.App._checkStorage(true) === false, 'freeing space clears the flag');
+    }
   } catch (e) {
     bad('runtime: ' + (e && e.stack || e));
   }

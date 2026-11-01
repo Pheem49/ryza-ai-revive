@@ -22,7 +22,6 @@
   var META_KEY = 'ryza.voicefav.v1';      /* 收藏表很小，放 localStorage */
 
   var _db = null;
-  var _protect = null;    /* fn(key) -> true 表示豁免逐出 */
 
   function hasIdb() { return typeof indexedDB !== 'undefined'; }
 
@@ -93,7 +92,9 @@
     DEFAULT_BUDGET: DEFAULT_BUDGET,
     DEFAULT_KEEP: DEFAULT_KEEP,
 
-    setProtector: function (fn) { _protect = (typeof fn === 'function') ? fn : null; },
+    /* 逐出豁免直接问本模块自己的收藏表（favorites 在 localStorage，
+       `isFav`）——曾经还留了一个 setProtector 注入口，但没有人调用它，
+       等于同一件事有两个主人，已删。 */
 
     /* 存一段语音。blob 可以是 Blob / ArrayBuffer / Uint8Array。
        key 建议用「回数 + 文本哈希」这类稳定值；重复 key 覆盖。 */

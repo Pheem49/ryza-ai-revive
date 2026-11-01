@@ -155,8 +155,8 @@ function makeEnv(opts) {
     vm.runInContext(src, sandbox, { filename: f });
   };
   for (const f of ['util.js', 'config.js', 'i18n.js', 'api.js', 'providers.js', 'turn.js',
-                   'echo.js', 'voice.js', 'memory.js', 'game.js', 'quests.js', 'daily.js',
-                   'world.js', 'alarm.js', 'nsfw.js', 'settings.js']) load(f);
+                   'echo.js', 'voice.js', 'memory.js', 'longterm.js', 'game.js', 'quests.js',
+                   'daily.js', 'world.js', 'alarm.js', 'nsfw.js', 'settings.js']) load(f);
 
   /* The same lines App.init runs before any slot button can exist (app.js:132).
      Without them Game.s is null and the restore path has nothing to restore on. */
@@ -233,6 +233,33 @@ console.log('\n# 1. 按下「保存到此槽」必须真的写进 localStorage')
   eq(env.toasts.filter((t) => t.isErr).length, 0, 'a successful load raises no error');
 }
 
+/* ------------------------------------- 1b. 长期记忆随存档回滚（旧档不清空） */
+console.log('\n# 1b. 长期记忆（longterm）跟着存档走，缺字段的旧存档不动它');
+{
+  const env = makeEnv();
+  const LT = env.sandbox.LongTerm;
+  LT.add('钓到一条大鱼', { date: '2026-09-19', category: 'general', importance: 2 });
+  const rows = renderRows(env);
+  rows[0].save.onclick();
+  const snap = JSON.parse(env.store[SLOT_KEY])[0];
+  ok(typeof snap.longterm === 'string' && snap.longterm.indexOf('钓到一条大鱼') >= 0,
+     '快照里带着长期记忆');
+
+  /* 存档后她又记了新东西，读档应当回到存档那一刻 */
+  LT.add('忘不掉的新事', { date: '2026-09-25', category: 'promise', importance: 5 });
+  eq(LT.list().length, 2, '（前置）读档前有两条');
+  rows[0].load.onclick();
+  eq(LT.list().length, 1, '读档把长期记忆回滚到存档那一刻');
+  eq(LT.list()[0].summary, '钓到一条大鱼', '恢复的是存档里的那条');
+
+  /* 旧存档（1.2.22 之前写的，没有 longterm 字段）不能把现在的记忆清空 */
+  const legacy = JSON.parse(env.store[SLOT_KEY])[0];
+  delete legacy.longterm;
+  const keep = LT.list().length;
+  eq(env.sandbox.Settings._applySnapshot(legacy), true, '旧存档仍然能读');
+  eq(LT.list().length, keep, '缺 longterm 的旧存档不动长期记忆');
+}
+
 /* ------------------------------------- 2. a write that fails must be loud */
 console.log('\n# 2. 写不进去的时候不能说「已保存」');
 {
@@ -299,6 +326,14 @@ console.log('\n# 5. 存储键必须和使用它的模块在同一个文件里声
     const declared = new Set();
     for (const m of code.matchAll(/\b(?:var|let|const)\s+([A-Za-z_$][\w$]*)/g)) declared.add(m[1]);
     for (const m of code.matchAll(/\bfunction\s+([A-Za-z_$][\w$]*)/g)) declared.add(m[1]);
+    /* 函数参数也是同一个文件里的声明（例：memory.js 的 readKey(key)）。
+       不把参数算进来的话，「跨文件常量」和「本地参数」分不开。 */
+    for (const m of code.matchAll(/\bfunction\s*[A-Za-z_$]*\s*\(([^)]*)\)/g)) {
+      m[1].split(',').forEach((p) => {
+        const n = p.trim().split(/[=\s]/)[0];
+        if (/^[A-Za-z_$][\w$]*$/.test(n)) declared.add(n);
+      });
+    }
     for (const m of code.matchAll(/localStorage\.(?:getItem|setItem|removeItem)\(\s*([A-Za-z_$][\w$]*)/g)) {
       if (!declared.has(m[1])) offenders.push(f + ' uses ' + m[1]);
     }

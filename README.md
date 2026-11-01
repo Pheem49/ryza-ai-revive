@@ -1,7 +1,7 @@
 # Ryza AI Revive (Ryza Chat)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Release: 1.2.22](https://img.shields.io/badge/Release-1.2.22-orange.svg)](https://github.com/zeroa234/ryza-ai-revive/releases)
+[![Release: 1.2.23](https://img.shields.io/badge/Release-1.2.23-orange.svg)](https://github.com/zeroa234/ryza-ai-revive/releases)
 [![Platform](https://img.shields.io/badge/Platform-Web%20%7C%20Windows%20%7C%20Android-blue.svg)](#multi-platform-support)
 
 A local-first, interactive conversational companion application featuring a real-time animated 2D Spine avatar of **Reisalin "Ryza" Stout** (*Atelier Ryza* series). Built with a static HTML/JavaScript client kernel, rich companion RPG mechanics, real-time voice synthesis, and multi-platform packaging for Web, Desktop (Electron), and Android (WebView).
@@ -115,7 +115,7 @@ Large binary files (Spine skeleton binaries `.skel`, high-resolution textures `.
 Restore them from any existing official APK release or unpacked desktop build:
 ```bash
 # If using an APK release:
-python3 scripts/restore_media.py path/to/RyzaChat-1.2.22.apk
+python3 scripts/restore_media.py path/to/RyzaChat-1.2.23.apk
 
 # If using an unpacked Windows desktop folder:
 python3 scripts/restore_media.py path/to/win-unpacked/resources/web
@@ -171,6 +171,33 @@ The microphone button allows voice dictation:
 
 ---
 
+---
+
+## Capabilities
+
+- Dialogue modes: chat, story, immersive, ASMR, text
+- Spine 4.2 portrait and scene graph (posture, camera, tap hit-testing)
+- Local RPG-style state: stamina, quests, inventory, daily rewards (`localStorage`)
+- Two-layer session memory plus a dated long-term layer, independent of adventure logs
+- Sitting variants (normal / cross-legged) when the worn outfit ships both
+- Deterministic sleep / rest at home (`stamina.sleep`)
+- Storage-pressure canary: a full origin is reported instead of failing silently
+- Four language slots (UI, bundled voice, LLM output, TTS), seven UI locales
+- Tagged replies for scene side effects; numeric deltas in a trailing `<state>` block (no function-calling requirement)
+
+---
+
+## Runtime Resources
+
+Structural tables (JSON, atlas, SVG) live in `web/assets/` and are versioned with the client. Large binaries (raster, audio, skeleton) are excluded from version control and restored before a full session or packaged build:
+
+```bash
+python scripts/restore_media.py path/to/RyzaChat-1.2.23.apk
+python scripts/restore_media.py path/to/win-unpacked/resources/web
+```
+
+---
+
 ## Building for Platforms
 
 ### Desktop (Electron Application)
@@ -201,7 +228,7 @@ powershell -File scripts/build_apk.ps1
 
 ## Testing & Quality Assurance
 
-The codebase includes an extensive suite of automated tests and architectural constraints:
+The codebase includes an extensive suite of automated tests and architectural constraints (the full list of suites lives in [docs/PROJECT.md §4](docs/PROJECT.md)):
 
 ```bash
 # Run core test suite (boot smoke test + strict layer verification)
@@ -213,9 +240,11 @@ node scripts/layering_check.js --strict     # Enforces strict module boundaries 
 node scripts/game_logic_regression.js       # Verifies RPG reducers, items, quests, stamina
 node scripts/memory_regression.js           # Verifies long-term episodic memory cards
 node scripts/motion_regression.js           # Verifies Spine animations, transitions, and postures
+node scripts/sitting_regression.js          # Verifies sitting posture variants and arm/leg animations
 node scripts/save_slot_regression.js        # Verifies 3-slot save/load serialization
 node scripts/back_regression.js             # Verifies Android/desktop back button navigation stack
 node scripts/transport_error_regression.js  # Verifies network timeouts and HTTP error handling
+node scripts/i18n_coverage.js               # Verifies complete 7-locale translation coverage
 python3 scripts/privacy_check.py web        # Packaging gate: checks for accidentally leaked secrets
 ```
 
@@ -270,7 +299,7 @@ python3 scripts/privacy_check.py web        # Packaging gate: checks for acciden
 
 #### 1. The avatar is completely invisible or shows a black screen.
 - **Cause**: Binary Spine assets (`.skel`, `.atlas`, `.png`) have not been restored from an APK or build yet.
-- **Solution**: Run `python3 scripts/restore_media.py path/to/RyzaChat-1.2.22.apk`.
+- **Solution**: Run `python3 scripts/restore_media.py path/to/RyzaChat-1.2.23.apk`.
 
 #### 2. The app is stuck on "Waiting for a reply...".
 - Check that your **Base URL ends in `/v1`** (e.g., `https://openrouter.ai/api/v1`).

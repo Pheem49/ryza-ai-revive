@@ -1467,8 +1467,14 @@
 
     _sittingFromPosture: function () {
       var p = Avatar._loadedPosture() || '';
+      if (/stand/i.test(p)) return 'sitting_normal';   /* idle while standing is not a sitting variant */
+      /* The player's chosen sitting variant is honoured only while the sitting
+         skeleton is on screen AND the worn outfit's own SittingSets really
+         ships that id (an imported ZIP or a future costume may not). */
+      var want = '';
+      try { want = String(Config.section('state').sittingVariant || ''); } catch (e) {}
+      if (want && Avatar.sittingVariants().indexOf(want) >= 0) return want;
       if (/agura/i.test(p)) return 'sitting_agura';
-      if (/stand/i.test(p)) return 'standing';
       return 'sitting_normal';
     },
 
@@ -1497,6 +1503,31 @@
     _sittingSets: function () {
       var g = Avatar.gesture && Avatar.gesture.emotionalGesture;
       return (g && g.SittingSets) || [];
+    },
+
+    /* 这套服装的坐姿变体 id（数据驱动，按 SittingSets 出现顺序）。
+       官方 5 套坐装都是 ['sitting_normal','sitting_agura']；
+       只有一种（导入的 ZIP 或以后的单姿态服装）时不显示切换键。 */
+    sittingVariants: function () {
+      var seen = {}, out = [];
+      Avatar._sittingSets().forEach(function (x) {
+        [x.newId, x.previousId].forEach(function (id) {
+          if (!id || seen[id]) return;
+          seen[id] = 1; out.push(id);
+        });
+      });
+      return out;
+    },
+
+    /* 盘腿切换键的可见条件：屏幕上确实是坐姿皮肤，且这套服装有多个坐姿变体。
+       （站着时不显示——站着问「普通坐/盘腿坐」没有意义。） */
+    sittingSwitchable: function () {
+      return Avatar.sittingVariants().length > 1 &&
+             Avatar._loadedPosture() === 'posture_sitting';
+    },
+
+    currentSittingVariant: function () {
+      return Avatar._sittingId || 'sitting_normal';
     },
 
     _sittingMandatory: function () {
@@ -1532,19 +1563,30 @@
       return out;
     },
 
-    /* 手动指定坐姿变体（官方数据里没有自动切换，只留这一个入口给上层调用）。
-       仅当 SittingSets 里存在该 id 时才接受。 */
+    /* 手动指定坐姿变体（官方数据里没有自动切换，这里只认数据里存在的 id）。
+       这是 #13 的入口：盘腿（sitting_agura）与普通坐姿在包里是两套腿/手
+       动作，官方权重把「自动切换」关掉了，所以只能由玩家点头切换。 */
     setSittingVariant: function (id, cb) {
-      var known = {};
-      Avatar._sittingSets().forEach(function (x) { known[x.newId] = 1; known[x.previousId] = 1; });
-      if (!known[id]) { cb && cb(new Error('unknown sitting variant: ' + id)); return; }
+      if (Avatar.sittingVariants().indexOf(id) < 0) {
+        cb && cb(new Error('unknown sitting variant: ' + id));
+        return;
+      }
       Avatar._sittingId = id;
       Avatar._sitSlotCache = null;
+      /* 记进存档：
+         setEmotion（每轮回复都会走）和 loadSkin 都会用 _sittingFromPosture()
+         重设 _sittingId —— 不记的话玩家点的盘腿下一句话就没了。 */
+      try { Config.set('state.sittingVariant', id); } catch (e) {}
       Avatar._armG = null;
       Avatar._torsoG = null;
       Avatar._legG = null;
       Avatar._legLG = null;
       Avatar._legRG = null;
+      /* 立刻按新变体重挑手臂/腿的动作层（否则要等下一次 idle 重掷，
+         点下去像没反应）。preferRest=true 让手臂走 idleGroupIds.byPosture
+         （官方就是按坐姿分别给了休息组：normal→grp_fg_025 / agura→grp_fg_027）；
+         keepIfOk=false：旧组的 ApplicableSittingIDs 已不匹配。 */
+      Avatar._syncAdditives(Avatar._idleName(), Avatar._poseType, false, true, false);
       if (cb) cb(null, Avatar.sittingMandatorySlots());
     },
 
@@ -2236,7 +2278,7 @@
          repeatMin/repeatMax: the same head/eye pattern plays N times before
          a new driver is rolled. Keep the pattern within a band; when the
          band changes (talk start/stop) start a new pattern cleanly. */
-      var spec = null, i, hit = null;
+      var spec = null, hit = null;
       var cyc = Avatar._lookCyc;
       if (cyc && cyc.band === band && cyc.left > 0 && cyc.spec) {
         cyc.left--;

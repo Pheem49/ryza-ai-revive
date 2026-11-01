@@ -78,4 +78,34 @@
 
   global.RyzaShell = global.RyzaShell || {};
   global.RyzaShell.handleBack = handleBack;
+
+  /* Desktop / browser have no back key. The status sheet in particular only
+     ever had an opener (the HUD chips), so off Android it could not be closed
+     at all (PR #16 reported this; its capture-phase "click anywhere" fix
+     re-opened the bag on the second tap, so it is redone here). Esc runs the
+     same layer order as the back key — except on the title/onboarding screens,
+     where "back" means "start". Each sheet also gets an explicit ×, and its
+     drag handle closes it on tap. */
+  var STARTERS = ['overlay-title', 'overlay-onboard', 'overlay-prologue'];
+  if (document.addEventListener) {
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      for (var i = 0; i < STARTERS.length; i++) {
+        if (visible(document.getElementById(STARTERS[i]))) return;
+      }
+      if (handleBack()) e.preventDefault();
+    });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.sheet') || [], function (sheet) {
+    var close = function () { sheet.classList.add('hidden'); };
+    var x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'sheet-close';
+    x.textContent = '×';
+    x.setAttribute('aria-label', 'Close');
+    x.onclick = close;
+    sheet.appendChild(x);
+    var handle = sheet.querySelector('.sheet-handle');
+    if (handle) handle.onclick = close;
+  });
 })(window);

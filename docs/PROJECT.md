@@ -21,13 +21,19 @@ scripts/
   serve.py              # static origin + CORS proxy
   build_indexes.py      # assets → web/assets/_index/*.json
   restore_media.py      # copy runtime binaries into web/assets/
-  motion_regression.js
-  game_logic_regression.js
-  expression_coverage.js
-  memory_regression.js
-  boot_smoke.js
-  privacy_check.py      # packaging gate
+  verify_skins.py       # official outfit record check (sizes / zip sha256)
   stamp_version.js      # version.json → package.json, Gradle
+  privacy_check.py      # packaging gate
+  layering_check.js     # cross-module boundary guard (--strict must be 0)
+  boot_smoke.js         # boot wiring + static contracts
+  motion_regression.js  #+ expression_coverage.js, back_regression.js,
+                        #  game_logic_regression.js, memory_regression.js,
+                        #  longterm_regression.js, save_slot_regression.js,
+                        #  transport_error_regression.js, i18n_coverage.js,
+                        #  sitting_regression.js, welcome_mission_regression.js,
+                        #  nsfw_intent_regression.js, voice_regression.js,
+                        #  stt_regression.js, crf_import_regression.js,
+                        #  proxy_target_regression.js, electron_storage_regression.js
   build_desktop.ps1
   build_apk.ps1
   setup_android_tools.ps1
@@ -66,8 +72,13 @@ powershell -File scripts/build_apk.ps1
 | `game.js` | RPG reducer; `applyDelta` is the sole write path |
 | `quests.js` | Quest lifecycle and offline action tables |
 | `daily.js` | Daily rewards issued through `Game` |
-| `memory.js` | Session / summary cards (disjoint from `Game.s.memory`) |
+| `memory.js` | Session / summary cards (disjoint from `Game.s.memory`); backup-rotating persistence |
+| `longterm.js` | Dated facts + digest: relevance-picked entries, protected categories never dropped silently |
 | `world.js` | Map hierarchy, NPC placement, time-of-day |
+| `worldmap.js` | Area-plate map view: calibrated pins, stage markers, list toggle |
+| `crfstore.js` | Outfit ZIP import: validation with stable error codes, IndexedDB storage, atlas page injection |
+| `voicecache.js` | Speech-clip cache (byte budget, favourites exempt) for replay/favourite |
+| `back.js` | Android back key → close the topmost layer instead of quitting |
 | `i18n.js` | Seven UI locales; `Langs` slots for UI / voice pack / LLM / TTS, plus BCP-47 (`sttTag`) and ISO-639-1 (`sttLang`) |
 | `audio.js`, `alarm.js`, `fx.js`, `shell.js`, `nsfw.js`, `onboarding.js`, `kbd.js`, `util.js` | Routing, alarms, canvas FX, Electron window controls, clothing variant, prologue/tutorial, Android keyboard, shared helpers |
 
@@ -115,7 +126,18 @@ the right-hand column collapses that column (`app.quickCollapsed`).
 outfit 0001 does in the official pack; the ASMR bikinis are sitting-only and an imported ZIP
 is one pose), and a stage change returns to the source default (standing). The scene's
 `midgroundPostures` says which posture the midground art was drawn for — gating the chip on
-it left the toggle visible on one stage out of 38.
+it left the toggle visible on one stage out of 38. Every shipped sitting outfit also carries
+two seated variants in its own `SittingSets` (`sitting_normal` / `sitting_agura`, the
+cross-legged sit) whose switch weights are all 0, so a second chip exposes them by hand
+(`Avatar.sittingVariants/sittingSwitchable`, persisted as `state.sittingVariant`); an outfit
+with a single variant — an imported ZIP, for instance — gets no such chip.
+
+**Storage honesty.** Persistence is spread over per-module keys, and most writers used to
+swallow `QuotaExceededError`, which made a full origin look like "saving quietly stopped"
+(issue #14: the raw dialogue log and the memory cards reverting after a restart). Memory cards
+now rotate a `*.bak` copy and recover from it, an unreadable payload is kept as `*.corrupt`,
+an old save slot without a `longmem`/`longterm` field no longer wipes those layers, and the
+HUD runs a canary write once a minute so the player is told when the origin is full.
 
 ---
 
@@ -146,11 +168,20 @@ node scripts/boot_smoke.js
 node scripts/back_regression.js
 node scripts/game_logic_regression.js
 node scripts/memory_regression.js
+node scripts/longterm_regression.js
 node scripts/motion_regression.js
 node scripts/expression_coverage.js
+node scripts/nsfw_intent_regression.js
+node scripts/voice_regression.js
+node scripts/stt_regression.js
+node scripts/sitting_regression.js
+node scripts/crf_import_regression.js
+node scripts/welcome_mission_regression.js
 node scripts/proxy_target_regression.js
+node scripts/electron_storage_regression.js
 node scripts/save_slot_regression.js
 node scripts/transport_error_regression.js
+node scripts/i18n_coverage.js
 node scripts/layering_check.js --strict
 python scripts/privacy_check.py web
 ```

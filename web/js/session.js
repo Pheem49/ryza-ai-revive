@@ -150,7 +150,8 @@
       var st = (global.Config && Config.section('state')) || {};
       var llmCfg = (global.Config && Config.section('llm')) || {};
 
-      if (!llmCfg.apiKey) {
+      var ready = (global.Config && Config.llmReady) ? Config.llmReady() : !!llmCfg.apiKey;
+      if (!ready) {
         this._emit('error', { kind: 'nokey', message: 'NO_KEY', canRetry: false });
         return Promise.reject(new Error('NO_KEY'));
       }

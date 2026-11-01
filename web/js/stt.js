@@ -70,7 +70,6 @@
   var _rate = TARGET_RATE;
   var _pcm = [];            /* rolling Int16 frames, trimmed to the ring window */
   var _pcmSamples = 0;      /* samples currently in _pcm (sum of frame lengths) */
-  var _ringLimit = 0;
   var _speaking = false;
   var _voicedSince = 0;
   var _silentSince = 0;

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>ライザと話す — Ryza Chat</title>
-<link rel="stylesheet" href="css/app.css?v=model-pick-1">
+<link rel="stylesheet" href="css/app.css?v=r4">
 </head>
 <body>
 <div id="phone">
@@ -89,6 +89,7 @@
       <button type="button" class="round-btn" id="btn-zoom-reset" title="標準" data-i18n-title="zoom.reset">◎</button>
     </div>
     <button type="button" class="round-btn hidden" id="btn-posture" title="座る/立つ" data-i18n-title="hud.posture">座</button>
+    <button type="button" class="round-btn hidden" id="btn-sit-variant" title="あぐら/普通座り">盤</button>
     <button type="button" class="round-btn" id="btn-replay" title="もう一度聞く" data-i18n-title="voice.replay">▶</button>
     <button type="button" class="round-btn" id="btn-voicefav" title="お気に入り" data-i18n-title="voice.fav">★</button>
     <button type="button" class="round-btn" id="btn-log-toggle" title="会話履歴" data-i18n-title="talk.history"><img src="assets/icons/arrow_up.svg" alt=""></button>
@@ -192,8 +193,8 @@
     <button type="button" class="view-back-btn" title="Back" aria-label="Back"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>
     <h2 data-i18n="skin.title">服装</h2>
     <div class="head-actions">
-      <button class="mini-btn" id="btn-crf-zip" title="导入服装 ZIP（atlas/png/skel/gesture 四件）" data-i18n="skin.importZip" data-i18n-title="skin.importZipHint">导入服装</button>
-      <button class="mini-btn" id="btn-crf-remove" title="移除最后导入的服装" data-i18n="skin.removeImport" data-i18n-title="skin.removeImportHint">移除导入</button>
+      <button class="mini-btn" id="btn-crf-zip" data-i18n="crf.import" data-i18n-title="crf.importTip" title="导入服装 ZIP（atlas/png/skel/gesture 四件）">导入服装</button>
+      <button class="mini-btn" id="btn-crf-remove" data-i18n="crf.remove" data-i18n-title="crf.removeTip" title="移除最后导入的服装">移除导入</button>
     </div>
   </div>
   <div class="skin-toolbar">
@@ -204,6 +205,11 @@
     <div id="skin-nsfw-toggle" class="switch" role="button" tabindex="0" title="Toggle NSFW"></div>
   </div>
   <div id="skin-posture-hint" class="hint skin-hint"></div>
+  <details id="crf-help" class="hint skin-hint">
+    <summary data-i18n="crf.help.title">自带服装的格式</summary>
+    <p data-i18n="crf.help.plain"></p>
+    <p class="crf-help-tech" data-i18n="crf.help.tech"></p>
+  </details>
   <div id="skin-grid"></div>
   <input type="file" id="crf-file-zip" accept=".zip,application/zip" class="hidden">
 </section>
@@ -377,9 +383,9 @@
 
 <script src="vendor/spine-webgl.js"></script>
 <script src="js/util.js?v=hash-2"></script>
-<script src="js/config.js?v=nsfw-2"></script>
-<script src="js/i18n.js?v=cheat-2"></script>
-<script src="js/api.js?v=undress-1"></script>
+<script src="js/config.js?v=r4"></script>
+<script src="js/i18n.js?v=r4"></script>
+<script src="js/api.js?v=r4"></script>
 <script src="js/providers.js?v=1"></script>
 <script src="js/turn.js?v=1"></script>
 <script src="js/echo.js?v=1"></script>
@@ -388,8 +394,8 @@
 <script src="js/memory.js?v=mem-1"></script>
 <script src="js/longterm.js?v=1"></script>
 <script src="js/voicecache.js?v=1"></script>
-<script src="js/game.js?v=cheat-1"></script>
-<script src="js/quests.js?v=cheat-1"></script>
+<script src="js/game.js?v=r4"></script>
+<script src="js/quests.js?v=r4"></script>
 <script src="js/daily.js?v=cheat-1"></script>
 <script src="js/avatar.js?v=emotion-keep-1"></script>
 <script src="js/crfstore.js?v=1"></script>
@@ -402,10 +408,10 @@
 <script src="js/onboarding.js?v=tut-2"></script>
 <script src="js/fx.js?v=1"></script>
 <script src="js/shell.js?v=1"></script>
-<script src="js/back.js?v=back-1"></script>
+<script src="js/back.js?v=r4"></script>
 <script src="js/kbd.js?v=1"></script>
-<script src="js/settings.js?v=1"></script>
+<script src="js/settings.js?v=r4"></script>
 <script src="js/session.js?v=1"></script>
-<script src="js/app.js?v=undress-2"></script>
+<script src="js/app.js?v=r4"></script>
 </body>
 </html>

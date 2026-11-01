@@ -134,6 +134,34 @@ LT.setClock(() => ({ iso: '2026-09-20T12:00:00', day: '2026-09-20' }));
   ok(LT.import(dump), '导入成功');
   eq(LT.list().length, 1, '条目数恢复');
 
+  console.log('# 10. 受保护条目在「写进存储」这一步也不能被切掉（#14）');
+  {
+    const P = LT.LIMITS.ENTRY_LIMIT;
+    LT._reset();
+    for (let i = 0; i < P + 3; i++) {
+      LT.add('不能忘的约定 ' + i, { date: '2026-09-02', category: 'promise', importance: 5 });
+    }
+    eq(LT.list().length, P + 3, 'enforceLimit 把超额的受保护条目全留在内存里');
+    LT.load();                                   /* 从 localStorage 重读 */
+    eq(LT.list().length, P + 3, '持久化后受保护条目一条不少');
+    ok(LT.list().every(e => e.category === 'promise'), '回来的确实都是受保护条目');
+  }
+
+  console.log('# 11. 存档槽用的 snapshot / restore（替换语义，脏数据不猜）');
+  {
+    LT._reset();
+    LT.add('存档那一刻的事实', { date: '2026-09-20', category: 'general', importance: 3 });
+    const snap = LT.snapshot();
+    LT.add('存档之后的新事', { date: '2026-09-25', category: 'general', importance: 3 });
+    eq(LT.list().length, 2, '（前置）读档前两条');
+    ok(LT.restore(snap) === true, 'restore 接受快照');
+    eq(LT.list().length, 1, 'restore 是替换而不是追加');
+    eq(LT.list()[0].summary, '存档那一刻的事实', '恢复的是快照里的那条');
+    ok(LT.restore('not json{') === false, '脏快照返回 false');
+    eq(LT.list().length, 1, '脏快照不改变现有记忆');
+    ok(LT.restore(undefined) === false, '缺字段的旧存档返回 false');
+  }
+
   console.log((fail === 0 ? 'ALL PASS' : 'FAILED ' + fail));
   process.exit(fail === 0 ? 0 : 1);
 })().catch(e => { console.error(e); process.exit(1); });
