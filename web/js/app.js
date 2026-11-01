@@ -13,7 +13,16 @@
   var RPG_MODES = { chat: 1, story: 1, immersive: 1 };
 
   var App = {
-    history: [],
+    _hist: [],
+    get history() {
+      return (typeof window !== 'undefined' && window.Session && Session.history) ? Session.history : this._hist;
+    },
+    set history(val) {
+      this._hist = Array.isArray(val) ? val : [];
+      if (typeof window !== 'undefined' && window.Session && Session.setHistory) {
+        Session.setHistory(this._hist);
+      }
+    },
     memory: [],
     audio: null,
     speaking: false,
@@ -144,6 +153,7 @@
       App._bindChrome();
       App._bindTalk();
       App._bindOverlays();
+      App._wireSession();
       Game.on(function () { App.refreshHud(); App._syncOpenViews(); });
 
       /* Ports first: they must not depend on the asset chain below succeeding. */
@@ -215,11 +225,83 @@
 
     /* Every cross-module port, in one place, wired synchronously before any
        async work starts. These are plain closures: nothing here needs the asset
-       index. They used to sit inside the asset-loading .then, so a single throw
-       anywhere in that chain left the app looking alive with no TTS, no memory
-       and no quest ports — while the .catch reported it as an asset problem
-       (boot_smoke reproduced exactly that: a stub missing one method, and the
-       whole port block was silently skipped with the suite reporting ALL PASS). */
+       index. */
+    _wireSession: function () {
+      if (!window.Session) return;
+
+      Session.on('start', function (ev) {
+        App.speaking = true;
+        var btn = document.getElementById('btn-send');
+        if (btn) btn.disabled = true;
+        App.showTyping();
+        var retryBar = document.getElementById('retry-bar');
+        if (retryBar) retryBar.classList.add('hidden');
+        App._lastText = ev.text;
+      });
+
+      Session.on('reply', function (ev) {
+        App.speaking = false;
+        var btn = document.getElementById('btn-send');
+        if (btn) btn.disabled = false;
+        var reply = ev.reply;
+        App.remember('user', ev.userText);
+        App.remember('ryza', reply.text);
+        if (reply.state && typeof reply.state === 'object') {
+          App._applySceneDelta(reply.state);
+        }
+        if (reply.emotion || reply.attitude) {
+          if (window.Avatar && Avatar.setEmotion) Avatar.setEmotion(reply.emotion, reply.attitude);
+        }
+        if (window.Quests && Quests.render) {
+          var ql = document.getElementById('quest-list');
+          if (ql) Quests.render(ql, {});
+        }
+        App._sayReply(reply, ev.epoch);
+      });
+
+      Session.on('error', function (ev) {
+        App.speaking = false;
+        var btn = document.getElementById('btn-send');
+        if (btn) btn.disabled = false;
+        if (ev.kind === 'stamina') {
+          App.toast(I18n.t('toast.staminaOut'), true);
+          App._showFaint();
+          return;
+        }
+        var bar = document.getElementById('retry-bar');
+        if (bar && ev.message !== 'NO_KEY') bar.classList.remove('hidden');
+        var msg = String(ev.message || '');
+        var kind = ev.kind;
+        App.toast(kind === 'nokey' ? I18n.t('toast.needKey')
+               : kind === 'auth' ? I18n.t('toast.llmAuth')
+               : kind === 'model' ? I18n.t('toast.llmModel')
+               : I18n.t('toast.llmFail') + msg, true);
+        App.showBubble(I18n.tc('bubble.fail.' + kind,
+          kind === 'nokey' ? '（……ねえ、設定でAPIキーを入れないと、あたしの声が届かないみたい。）'
+          : kind === 'auth' ? '（……あれ、鍵が合ってないみたい。設定を見直してくれる？）'
+          : kind === 'model' ? '（……そのモデル名、あたしには呼べないみたい。設定を確認して。）'
+          : kind === 'timeout' ? '（……返事を待ってるのに、届いてないみたい。設定のベースURLとモデル名、見てくれる？）'
+          : kind === 'net' ? '（……そのアドレスに辿り着けないみたい。設定のベースURL、合ってる？）'
+          : '（……ごめん、今ちょっと繋がらないみたい。少し待ってからもう一回。）'));
+        if (kind === 'nokey') {
+          App.showView('settings');
+        }
+      });
+
+      Session.on('clear', function () {
+        App.history = [];
+        App._pages = []; App._pageSel = -1;
+        var dots = document.getElementById('log-dots');
+        if (dots) dots.innerHTML = '';
+        var bub = document.getElementById('bubble');
+        if (bub) bub.classList.remove('hidden');
+        var bt = document.getElementById('bubble-text');
+        if (bt) bt.textContent = '';
+        App.showView('talk');
+        App.greet();
+      });
+    },
+
     _wirePorts: function () {
       /* Hand the renderer the two host capabilities it needs, so avatar.js
          never reaches back into App (notice toasts, and which analyser to
@@ -1066,16 +1148,8 @@
       if (target && target !== s.tod) App._setTod(target);
     },
 
-    /* The clock line fed to the LLM every turn: day count + current band +
-       hour. Official scene.time_bucket is a FACT pushed TO marionette, not a
-       command; only local flow mode teaches/accepts a clock write. */
     _clockBlock: function (st) {
-      var mode = (Config.section('app').timeMode) || 'real';
-      var hour = mode === 'flow' ? Math.floor(Number(st.gameHour) || 12)
-               : mode === 'manual' ? World.todStartHour(st.tod)
-               : new Date().getHours();
-      return '## 現在時刻\n- 同伴 ' + (st.day || 1) + '日目／' +
-        World.todLabel(st.tod) + '（約' + hour + '時）';
+      return (window.Session && Session._clockBlock) ? Session._clockBlock(st) : '';
     },
 
     /* Talk → map / time of day / sleep. Source: detectEntryMapMove,
@@ -1571,58 +1645,16 @@
       }
     },
 
-    /* Scene facts every talk mode gets (source marionette_injection:
-       scene.current_stage / time_bucket / cast). Location is on screen
-       even in ASMR — without this block the model cannot name a place
-       or emit current_stage. */
     _sceneContext: function () {
-      var st = Config.section('state');
-      var parts = [];
-      if (window.World && World.promptBlock) parts.push(World.promptBlock(st));
-      parts.push(App._peopleBlock(st));
-      if (window.World) parts.push(App._clockBlock(st));
-      return parts.filter(Boolean).join('\n\n');
+      return (window.Session && Session._sceneContext) ? Session._sceneContext() : '';
     },
 
-    /* Numeric RPG (stamina / bags / quests) — chat/story/immersive only.
-       ASMR/text still receive _sceneContext so they can travel/sleep. */
     _rpgContext: function () {
-      var st = Config.section('state');
-      if (!RPG_MODES[st.mode]) return '';
-      return [Game.promptBlock(), Quests.promptBlock()].filter(Boolean).join('\n\n');
+      return (window.Session && Session._rpgContext) ? Session._rpgContext() : '';
     },
 
-    /* met_charas / npcs here — the official game state fed these to the
-       model so Ryza can reference other islanders by name. */
     _peopleBlock: function (st) {
-      if (!window.World || !World.npcs) return '';
-      var L = ['## この世界の人々（ライザ以外）'];
-      var here = World.npcsAt(st.stage, st.day || 1);
-      L.push('- いま同じ場所にいる人：' +
-        (here.length ? here.map(function (n) {
-          return World.npcName(n.id) + (n.note ? '（' + n.note + '）' : '');
-        }).join('、') : 'いない'));
-      var known = {};
-      (World.npcs.npcs || []).forEach(function (n) { known[n.id] = n; });
-      var met = (Game.s.met_charas || [])
-        .map(function (id) { return known[id]; })
-        .filter(Boolean).slice(0, 16);
-      if (met.length) {
-        L.push('- これまでに会った人：' + met.map(function (n) {
-          return World.npcName(n.id) + (n.note ? '（' + n.note + '）' : '');
-        }).join('、'));
-      }
-      /* Facts above, roster + protocol below — the model cannot use a cast it
-         was never shown (web/js/npc.js). */
-      if (window.Npc && Npc.promptBlock) {
-        var npcBlock = Npc.promptBlock(st, {
-          appCfg: Config.section('app'),
-          /* 回复语言与界面语言不同时，才允许模型附带「译文：」行 */
-          translate: !!(window.Langs && Langs.llm && Langs.ui && Langs.llm() !== Langs.ui())
-        });
-        if (npcBlock) L.push('', npcBlock);
-      }
-      return L.join('\n');
+      return (window.Session && Session._peopleBlock) ? Session._peopleBlock(st) : '';
     },
 
     /* re-paint every localized surface after a language change */
@@ -1703,17 +1735,21 @@
           body.appendChild(p);
         },
         onOk: function () {
-          App.history = [];
-          if (window.Nsfw) Nsfw.reset();
-          App._pages = []; App._pageSel = -1;
-          var dots = document.getElementById('log-dots');
-          if (dots) dots.innerHTML = '';
-          var bub = document.getElementById('bubble');
-          if (bub) bub.classList.remove('hidden');
-          var bt = document.getElementById('bubble-text');
-          if (bt) bt.textContent = '';
-          App.showView('talk');
-          App.greet();
+          if (window.Session) {
+            Session.clearHistory();
+          } else {
+            App.history = [];
+            if (window.Nsfw) Nsfw.reset();
+            App._pages = []; App._pageSel = -1;
+            var dots = document.getElementById('log-dots');
+            if (dots) dots.innerHTML = '';
+            var bub = document.getElementById('bubble');
+            if (bub) bub.classList.remove('hidden');
+            var bt = document.getElementById('bubble-text');
+            if (bt) bt.textContent = '';
+            App.showView('talk');
+            App.greet();
+          }
         }
       });
     },
@@ -1727,141 +1763,17 @@
     },
 
     say: function (text) {
-      var st = Config.section('state');
-      if (!Config.section('llm').apiKey) {
-        App.toast(I18n.t('toast.needKey'), true);
-        App.showView('settings');
-        return;
+      if (window.Session) {
+        return Session.say(text).catch(function () {});
       }
-      if (Game.faint() || !Game.canAct(Game.turnCost(st.mode, st.style))) {
-        App.toast(I18n.t('toast.staminaOut'), true);
-        App._showFaint();
-        return;
-      }
-      App._lastText = text;
-      var retryBar = document.getElementById('retry-bar');
-      if (retryBar) retryBar.classList.add('hidden');
-      App.speaking = true;
-      document.getElementById('btn-send').disabled = true;
-      App.showTyping();
-      Welcome.mark('talk');            /* official activity: app_launched x5 */
-
-      /* A new turn supersedes whatever was in flight: it stops her speech,
-         drops queued lines, and invalidates a reply still on the wire (the
-         epoch Api.chat re-checks when it resolves). */
-      var turnEpoch = (window.Turn && Turn.beginTurn) ? Turn.beginTurn('say') : null;
-      /* 本轮用户说的话作为长期记忆的相关度线索（cue），
-         并把这一轮记进待归纳队列（攒够 PENDING_MAX 自动归纳一次）。 */
-      if (window.LongTerm) {
-        try { LongTerm.note('user', text); } catch (e) {}
-      }
-      Api.chat(App.history, text, {
-        mode: st.mode, style: st.style,
-        epoch: turnEpoch,
-        cue: text,
-        rpgContext: App._rpgContext(),
-        sceneSection: App._sceneContext(),
-        nsfwSection: window.Nsfw ? Nsfw.screenFact() : ''
-      })
-        .then(function (reply) {
-          /* A reply that is no longer the current turn must not land at all —
-             not the history, not the game state, not the face. */
-          if (!App._turnCurrent(turnEpoch)) return;
-          App.speaking = false;
-          if (window.Turn && Turn.finishTurn) Turn.finishTurn();
-          document.getElementById('btn-send').disabled = false;
-          App.history.push({ role: 'user', content: text });
-          App.remember('user', text);
-          App.remember('ryza', reply.text);
-          try { if (window.Memory) Memory.ingest(text, reply.text); } catch (e) {}
-
-          if (reply.state && typeof reply.state === 'object') {
-            Game.applyDelta(reply.state, 'llm');
-            App._applySceneDelta(reply.state);
-          }
-          var cost = Game.turnCost(st.mode, st.style);
-          Game.spend(cost, 'talk');
-
-          if (window.Nsfw) Nsfw.onTurn(reply);
-          /* Omit = keep (same as undress). A missed tag must not snap the face
-             back to neutral/agree. */
-          if (reply.emotion || reply.attitude) {
-            Avatar.setEmotion(reply.emotion, reply.attitude);
-          }
-          /* After side effects so the echoed line matches the new screen.
-             All fields (emotion / undress / stage) live on this one line —
-             stripping it from history made every column decay together. */
-          App.history.push({
-            role: 'assistant',
-            content: Api.formatHistoryReply(reply.text)
-          });
-          App._sayReply(reply, turnEpoch);
-          /* 助手这一轮进长期记忆的待归纳队列（被 STALE 丢弃的回复不会走到这里） */
-          if (window.LongTerm) {
-            try { LongTerm.note('assistant', reply.text); } catch (e) {}
-          }
-
-          /* Talk-quests advance once per turn — if the LLM already reported
-             quest progress through <state>, don't double-count it here. */
-          if (!(reply.state && reply.state.quest)) Quests.progressEvent('talk');
-          Quests.render(document.getElementById('quest-list'), {});
-        })
-        .catch(function (e) {
-          /* Superseded on purpose (interruption / a newer turn): there is
-             nothing to report and no retry to offer — surfacing it would look
-             like a failure for something the user asked for.
-             This check MUST come before the state resets below: it used to sit
-             after them, so an aborted reply cleared App.speaking, pushed Turn
-             back to idle and re-enabled the send button *while the newer turn
-             was still generating* — the UI claimed it was not thinking and
-             accepted a third overlapping send. */
-          if (e && e.stale) return;
-          if (!App._turnCurrent(turnEpoch)) return;
-          App.speaking = false;
-          if (window.Turn && Turn.finishTurn) Turn.finishTurn();
-          document.getElementById('btn-send').disabled = false;
-          var bar = document.getElementById('retry-bar');
-          if (bar && e.message !== 'NO_KEY') bar.classList.remove('hidden');
-          var msg = String(e.message || '');
-          var kind = App._failKind(e);
-          App.toast(kind === 'nokey' ? I18n.t('toast.needKey')
-                 : kind === 'auth' ? I18n.t('toast.llmAuth')
-                 : kind === 'model' ? I18n.t('toast.llmModel')
-                 : I18n.t('toast.llmFail') + msg, true);
-          /* 面板台词必须指向真正的原因。原来不管什么错都写「没听见，再说一次」——
-             而那多数是端点/密钥问题，玩家会一直重发而不会去改设置。 */
-          App.showBubble(I18n.tc('bubble.fail.' + kind,
-            kind === 'nokey' ? '（……ねえ、設定でAPIキーを入れないと、あたしの声が届かないみたい。）'
-            : kind === 'auth' ? '（……あれ、鍵が合ってないみたい。設定を見直してくれる？）'
-            : kind === 'model' ? '（……そのモデル名、あたしには呼べないみたい。設定を確認して。）'
-            : kind === 'timeout' ? '（……返事を待ってるのに、届いてないみたい。設定のベースURLとモデル名、見てくれる？）'
-            : kind === 'net' ? '（……そのアドレスに辿り着けないみたい。設定のベースURL、合ってる？）'
-            : '（……ごめん、今ちょっと繋がらないみたい。少し待ってからもう一回。）'));
-        });
     },
 
-    /* 把模型端点的失败归类，让提示指向真正的原因。
-       传输层那两条优先看 Api 挂上的 err.code —— 文案已经本地化，不能再拿中文去匹配；
-       其余只依据错误文本（各家端点错误码不统一）：
-         nokey 没填 Key / auth 401|403 认证失败 / model 模型名不被接受 /
-         timeout 端点不回 / net 地址不可达 / other 其余 */
     _failKind: function (err) {
-      var code = (err && typeof err === 'object' && err.code) || '';
-      if (code === 'timeout' || code === 'net') return code;
-      var m = String((err && err.message) || err || '');
-      if (m === 'NO_KEY' || /NO_KEY|needKey/i.test(m)) return 'nokey';
-      if (/401|403|unauthor|invalid[_ ]api[_ ]key|forbidden/i.test(m)) return 'auth';
-      if (/model|not found|unsupported/i.test(m)) return 'model';
-      return 'other';
+      return (window.Session && Session._failKind) ? Session._failKind(err) : 'other';
     },
 
-    /* Is the turn with this epoch still the one in charge? Null means there is
-       no turn layer (or no canceller was injected), so there is nothing to
-       compare against and the caller is treated as current. */
     _turnCurrent: function (epoch) {
-      if (epoch == null) return true;
-      if (!window.Turn || !Turn.epoch) return true;
-      return Turn.epoch() === epoch;
+      return (window.Session && Session._turnCurrent) ? Session._turnCurrent(epoch) : true;
     },
 
     /* A reply can now carry more than one speaker (web/js/npc.js). Her lines are

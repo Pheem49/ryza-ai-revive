@@ -185,7 +185,7 @@ const load = (f) => vm.runInContext(fs.readFileSync(path.join(WEB, 'js', f), 'ut
 
 for (const f of ['util.js', 'config.js', 'i18n.js', 'api.js', 'providers.js', 'turn.js', 'echo.js', 'voice.js', 'memory.js',
                  'game.js', 'quests.js', 'daily.js', 'world.js', 'npc.js', 'audio.js',
-                 'alarm.js', 'fx.js', 'nsfw.js', 'settings.js', 'app.js']) {
+                 'alarm.js', 'fx.js', 'nsfw.js', 'settings.js', 'session.js', 'app.js']) {
   try { load(f); console.log('  loaded ' + f); }
   catch (e) { bad('load ' + f + ': ' + e.message); }
 }

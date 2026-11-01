@@ -68,3 +68,6 @@ docs/reference/Skeleton.ts
 docs/reference/spine_example.html
 data/libapp_strings_ascii.txt
 data/libapp_strings_ja.txt
+
+.agents/
+skills-lock.json

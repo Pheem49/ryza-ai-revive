@@ -124,7 +124,11 @@
     "longterm": "core",
     "_comment_longterm": "长期记忆（条目 + 摘要）：纯逻辑，无 DOM；只读写 localStorage。",
     "voicecache": "features",
-    "_comment_voicecache": "语音片段缓存：IndexedDB 存 blob + 字节预算逐出。"
+    "_comment_voicecache": "语音片段缓存：IndexedDB 存 blob + 字节预算逐出。",
+    "session": {
+      "layer": "features",
+      "note": "会话核心：管理轮次周期、代际令牌、提示词装配、状态提取与多说话人调度"
+    }
   },
   "allowCycles": [
     {
@@ -206,7 +210,10 @@
       "Onboarding"
     ],
     "shell": [],
-    "kbd": []
+    "kbd": [],
+    "session": [
+      "Session"
+    ]
   },
   "coreForbidden": {
     "_note": "core 层不允许出现的触达。localStorage 不在此列——持久化本来就是 core 的职责。带 view:true 的只在‘自带 view 段’模块里豁免（见 ownsView）。",
